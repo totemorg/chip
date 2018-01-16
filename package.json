@@ -15,5 +15,9 @@
   "bugs": {
     "url": "https://github.com/ACMESDS/chipper/issues"
   },
-  "homepage": "https://github.com/ACMESDS/chipper#readme"
+  "homepage": "https://github.com/ACMESDS/chipper#readme",
+  "dependencies": {
+	"engine": "^1.0.0",
+	"enum": "^1.0.0"
+  }
 }
