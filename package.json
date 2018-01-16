@@ -1,0 +1,19 @@
+{
+  "name": "chipper",
+  "version": "1.0.0",
+  "description": "",
+  "main": "chipper.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ACMESDS/chipper.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ACMESDS/chipper/issues"
+  },
+  "homepage": "https://github.com/ACMESDS/chipper#readme"
+}
