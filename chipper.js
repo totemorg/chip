@@ -63,82 +63,61 @@ var CHIPPER = module.exports = {
 			file = Job.file,
 			src = `${req.group}.events`, //"??.events LEFT JOIN ??.voxels ON events.voxelID = voxels.ID ",
 			fields = "*",
+			jobreg = `REG ${job.name}@${job.qos}`,
 			offset = Job.offset || 0, 
-			getEvents = `SELECT ${fields} FROM ${src} WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
-			/*
-			Will use SELECT SQL_CALC_FOUND_ROWS ... WHERE t>last_t ORDER BY t when limits fully implemented.  
-			Limit will be QoS dependent
-			*/
-			getChips = `SELECT ${group} FROM ${src} GROUP BY ${group} `,
-			getFiles = `SELECT * FROM app.files WHERE ? LIMIT 1`;
+			get = {
+				events: `SELECT ${fields} FROM ${src} WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
+				chips: `SELECT ${group} FROM ${src} GROUP BY ${group} `,
+				voxels: "SELECT * FROM app.voxels WHERE MBRcontains(ST_GeomFromText(?), Ring)", 
+				files: "SELECT * FROM app.files WHERE ?"
+			};
 
-		Trace( `REG ${job.name} QOS=${job.qos}` );
-		
-		Trace( `REG ${job.name} FILES: ` + sql.query(getFiles, {Name: file}, function (err,files) {
+		sql.getRecord( "FILE"+jobreg,  get.files, {Name: file}, function (file) {
 			
-			//Log("reg files",files);
-			
-			if ( file = err ? null : files[0] ) {
-				job.File = Copy( file, {} );
-				where.fileID = file.ID;
+			job.File = Copy( file, {} );
+			where.fileID = file.ID;
 				
-				if ( group )  // regulate chips 
-					Trace( `REG ${job.name} IMAGES: ` + sql.query( 
-						getChips, [req.group, req.group, req, group], function (err, recs) {  // process each chip
+			if ( group )  // regulate chips 
+				sql.getRecord( "IMAGE"+jobreg, get.chips, [ req.group, req.group, req, group ], function (chip) {  // process each chip
+					var 
+						dswhere = Copy(where,{}),
+						dsargs = [req.group, req.group, dswhere, limit];
 
-							if ( !err )
-								recs.each( function (n, rec) {  // build chip select clause
-									var 
-										dswhere = Copy(where,{}),
-										dsargs = [req.group, req.group, dswhere, limit];
+					Each(chip, function (key,val) {
+						dswhere[key] = val;
+					});
 
-									Each(rec, function (key,val) {
-										dswhere[key] = val;
-									});
+					sql.insertJob( Copy(job, {  // put job into the job queue
+						dsevs: getEvents,
+						dsargs: dsargs
+					}), function (sql, job) {
 
-									sql.insertJob( Copy(job, {  // put chip into the job queue
-										dsevs: getEvents,
-										dsargs: dsargs
-									}), function (sql, job) {
+						sql.getRecords( jobreg+" EVENTS", job.dsevs, job.dsargs, function (err, evs) {  // return events for this chip
+							if (!err) cb(evs);
+						});
 
-										Trace( "REG EVENTS" + sql.query( job.dsevs, job.dsargs, function (err, evs) {  // return events for this chip
-											if (!err) cb(evs);
-										}).sql );
+					});
+				});
 
-									});
-								});
+			else
+			if (Job.aoi)  // regulate events
+				sql.getRecord( "VOXEL"+jobreg, get.voxels, [ toPolygon(Job.aoi) ], function (voxel) {
+					job.Voxel = Copy( voxel, {} );
+					where.voxelID = voxel.ID;
 
-					}).sql );
+					sql.insertJob( Copy({  // put job into the job queue
+						Load: sql.format(get.events, [where,limit,offset] ),
+						Dump: ""
+					}, job), function (sql, job) {
+						cb( job );
+					});
+				});
 
-				if (true)  // regulate events
-					Trace( `REG ${job.name} VOXELS: ` + sql.query(
-						"SELECT * FROM app.voxels WHERE MBRcontains(ST_GeomFromText(?), Ring)", 
-						[ toPolygon(Job.aoi) ],
-						function (err,voxels) {
-							//Log("reg voxels", voxels.length);
-							
-							voxels.each( function (n,voxel) {
-								job.Voxel = Copy( voxel, {} );
-								where.voxelID = voxel.ID;
-								
-								sql.insertJob( Copy({  // put chip into the job queue
-									Load: sql.format(getEvents, [where,limit,offset] ),
-									Dump: "",
-									OffsetInit: offset,
-									Offset: offset									
-								}, job), function (sql, job) {
-									cb( job );
-								});
-							});
-					}).sql );
-				
-				else  // pull all events
-					Trace( `GET ${job.name} EVENTS: ` + sql.query( 
-						getEvents, [req.group, req.group, where, limit], function (err, evs) {
-						cb( err ? null : evs);
-					}).sql );
-			}
-		}).sql );
+			else  // pull all events
+				sql.getRecords( `EVENTGET ${job.name}`, get.events, [ req.group, req.group, where, limit ], function (err, evs) {
+					cb( err ? null : evs );
+				});
+		});
 	},	
 	
 	ingestCache: function (sql, fileID, cb) {  // ingest the evcache into the events with callback(aoi,events)
