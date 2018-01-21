@@ -50,7 +50,7 @@ var CHIPPER = module.exports = {
 	aoi: null, 			//< current aoi being processed
 	limit: 1e99, 		//< max numbers of chips to pull over any aoi
 	
-	chipEvents: function ( req, ctx, job, cb ) {  // callback cb(events)
+	chipEvents: function ( req, ctx, cb ) {  // callback cb(events)
 		
 		var 
 			sql = req.sql,
@@ -63,22 +63,41 @@ var CHIPPER = module.exports = {
 			file = Job.file,
 			src = `${req.group}.events`, //"??.events LEFT JOIN ??.voxels ON events.voxelID = voxels.ID ",
 			fields = "*",
-			jobreg = `REG ${job.name}@${job.qos}`,
 			offset = Job.offset || 0, 
 			get = {
 				events: `SELECT ${fields} FROM ${src} WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
 				chips: `SELECT ${group} FROM ${src} GROUP BY ${group} `,
 				voxels: "SELECT * FROM app.voxels WHERE MBRcontains(ST_GeomFromText(?), Ring)", 
 				files: "SELECT * FROM app.files WHERE ?"
-			};
+			},
+			job = { // job descriptor for regulator
+				qos: req.profile.QoS, 
+				priority: 0,
+				client: req.client,
+				class: req.table,
+				credit: req.profile.Credit,
+				name: req.table,
+				task: Job.task || "",
+				notes: [
+						(req.table+"?").tagurl(req.query).tag("a", {href:"/" + req.table + ".run"}), 
+						((req.profile.Credit>0) ? "funded" : "unfunded").tag("a",{href:req.url}),
+						"RTP".tag("a", {
+							href:`/rtpsqd.view?task=${Job.task}`
+						}),
+						"PMR brief".tag("a", {
+							href:`/briefs.view?options=${Job.task}`
+						})
+				].join(" || ")
+			},
+			regmsg = `REG ${job.name}@${job.qos}`;
 
-		sql.getRecord( "FILE"+jobreg,  get.files, {Name: file}, function (file) {
+		sql.getRecord( "FILE"+regmsg,  get.files, {Name: file}, function (file) {
 			
 			job.File = Copy( file, {} );
 			where.fileID = file.ID;
 				
 			if ( group )  // regulate chips 
-				sql.getRecord( "IMAGE"+jobreg, get.chips, [ req.group, req.group, req, group ], function (chip) {  // process each chip
+				sql.getRecord( "IMAGE"+regmsg, get.chips, [ req.group, req.group, req, group ], function (chip) {  // process each chip
 					var 
 						dswhere = Copy(where,{}),
 						dsargs = [req.group, req.group, dswhere, limit];
@@ -92,7 +111,7 @@ var CHIPPER = module.exports = {
 						dsargs: dsargs
 					}), function (sql, job) {
 
-						sql.getRecords( jobreg+" EVENTS", job.dsevs, job.dsargs, function (err, evs) {  // return events for this chip
+						sql.getRecords( regmsg+" EVENTS", job.dsevs, job.dsargs, function (err, evs) {  // return events for this chip
 							if (!err) cb(evs);
 						});
 
@@ -101,14 +120,17 @@ var CHIPPER = module.exports = {
 
 			else
 			if (Job.aoi)  // regulate events
-				sql.getRecord( "VOXEL"+jobreg, get.voxels, [ toPolygon(Job.aoi) ], function (voxel) {
-					job.Voxel = Copy( voxel, {} );
+				sql.getRecord( "VOXEL"+regmsg, get.voxels, [ toPolygon(Job.aoi) ], function (voxel) {
+					
 					where.voxelID = voxel.ID;
 
-					sql.insertJob( Copy({  // put job into the job queue
-						Load: sql.format(get.events, [where,limit,offset] ),
-						Dump: ""
-					}, job), function (sql, job) {
+					job.Voxel = Copy( voxel, {} );
+					job.Load = sql.format(get.events, [where,limit,offset] );
+					job.Dump = "";
+					
+					//Log("=================== job insert",where);
+					sql.insertJob( Copy(job,{}), function (sql, job) {  // put job into the job queue
+						//Log(">>>>>>>>>>>>>>>>>> job run",job.Load);
 						cb( job );
 					});
 				});
