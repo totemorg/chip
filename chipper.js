@@ -79,7 +79,7 @@ var CHIPPER = module.exports = {
 				name: req.table,
 				task: Job.task || "",
 				notes: [
-						(req.table+"?").tagurl(req.query).tag("a", {href:"/" + req.table + ".run"}), 
+						req.table.tag("?",req.query).tag("a", {href:"/" + req.table + ".run"}), 
 						((req.profile.Credit>0) ? "funded" : "unfunded").tag("a",{href:req.url}),
 						"RTP".tag("a", {
 							href:`/rtpsqd.view?task=${Job.task}`
@@ -91,55 +91,61 @@ var CHIPPER = module.exports = {
 			},
 			regmsg = `REG ${job.name}@${job.qos}`;
 
-		sql.getRecord( "FILE"+regmsg,  get.files, {Name: file}, function (file) {
-			
-			job.File = Copy( file, {} );
-			where.fileID = file.ID;
-				
-			if ( group )  // regulate chips 
-				sql.getRecord( "IMAGE"+regmsg, get.chips, [ req.group, req.group, req, group ], function (chip) {  // process each chip
-					var 
-						dswhere = Copy(where,{}),
-						dsargs = [req.group, req.group, dswhere, limit];
+		if ( file.charAt(0) == "/" ) {  // fetching from a totem compliant data service
+			job.Load = file.tag("?",Job);
+			job.Dump = "";
 
-					Each(chip, function (key,val) {
-						dswhere[key] = val;
-					});
+			cb( job );
+		}
+		
+		else
+			sql.getRecord( "FILE"+regmsg,  get.files, {Name: file}, function (file) {
 
-					sql.insertJob( Copy(job, {  // put job into the job queue
-						dsevs: getEvents,
-						dsargs: dsargs
-					}), function (sql, job) {
+				job.File = Copy( file, {} );
+				where.fileID = file.ID;
 
-						sql.getRecords( regmsg+" EVENTS", job.dsevs, job.dsargs, function (err, evs) {  // return events for this chip
-							if (!err) cb(evs);
+				if ( group )  // regulate chips 
+					sql.getRecord( "IMAGE"+regmsg, get.chips, [ req.group, req.group, req, group ], function (chip) {  // process each chip
+						var 
+							dswhere = Copy(where,{}),
+							dsargs = [req.group, req.group, dswhere, limit];
+
+						Each(chip, function (key,val) {
+							dswhere[key] = val;
 						});
 
+						sql.insertJob( Copy(job, {  // put job into the job queue
+							dsevs: getEvents,
+							dsargs: dsargs
+						}), function (sql, job) {
+
+							sql.getRecords( regmsg+" EVENTS", job.dsevs, job.dsargs, function (err, evs) {  // return events for this chip
+								if (!err) cb(evs);
+							});
+
+						});
 					});
-				});
 
-			else
-			if (Job.aoi)  // regulate events
-				sql.getRecord( "VOXEL"+regmsg, get.voxels, [ toPolygon(Job.aoi) ], function (voxel) {
-					
-					where.voxelID = voxel.ID;
+				else
+				if (Job.aoi)  // regulate events
+					sql.getRecord( "VOXEL"+regmsg, get.voxels, [ toPolygon(Job.aoi) ], function (voxel) {
 
-					job.Voxel = Copy( voxel, {} );
-					job.Load = sql.format(get.events, [where,limit,offset] );
-					job.Dump = "";
-					
-					//Log("=================== job insert",where);
-					sql.insertJob( Copy(job,{}), function (sql, job) {  // put job into the job queue
-						//Log(">>>>>>>>>>>>>>>>>> job run",job.Load);
-						cb( job );
+						where.voxelID = voxel.ID;
+
+						job.Voxel = Copy( voxel, {} );
+						job.Load = sql.format(get.events, [where,limit,offset] );
+						job.Dump = "";
+
+						sql.insertJob( Copy(job,{}), function (sql, job) {  // put job into the job queue
+							cb( job );
+						});
 					});
-				});
 
-			else  // pull all events
-				sql.getRecords( `EVENTGET ${job.name}`, get.events, [ req.group, req.group, where, limit ], function (err, evs) {
-					cb( err ? null : evs );
-				});
-		});
+				else  // pull all events
+					sql.getRecords( `EVENTGET ${job.name}`, get.events, [ req.group, req.group, where, limit ], function (err, evs) {
+						cb( err ? null : evs );
+					});
+			});
 	},	
 	
 	ingestCache: function (sql, fileID, cb) {  // ingest the evcache into the events with callback(aoi,events)
