@@ -99,13 +99,13 @@ var CHIPPER = module.exports = {
 		}
 		
 		else
-			sql.getRecord( "FILE"+regmsg,  get.files, {Name: file}, function (file) {
+			sql.each( regmsg,  get.files, {Name: file}, function (file) {
 
 				job.File = Copy( file, {} );
 				where.fileID = file.ID;
 
 				if ( group )  // regulate chips 
-					sql.getRecord( "IMAGE"+regmsg, get.chips, [ req.group, req.group, req, group ], function (chip) {  // process each chip
+					sql.each( regmsg, get.chips, [ req.group, req.group, req, group ], function (chip) {  // process each chip
 						var 
 							dswhere = Copy(where,{}),
 							dsargs = [req.group, req.group, dswhere, limit];
@@ -119,7 +119,7 @@ var CHIPPER = module.exports = {
 							dsargs: dsargs
 						}), function (sql, job) {
 
-							sql.getRecords( regmsg+" EVENTS", job.dsevs, job.dsargs, function (err, evs) {  // return events for this chip
+							sql.getRecords( regmsg, job.dsevs, job.dsargs, function (err, evs) {  // return events for this chip
 								if (!err) cb(evs);
 							});
 
@@ -128,7 +128,7 @@ var CHIPPER = module.exports = {
 
 				else
 				if (Job.aoi)  // regulate events
-					sql.getRecord( "VOXEL"+regmsg, get.voxels, [ toPolygon(Job.aoi) ], function (voxel) {
+					sql.each( "VOXEL"+regmsg, get.voxels, [ toPolygon(Job.aoi) ], function (voxel) {
 
 						where.voxelID = voxel.ID;
 
