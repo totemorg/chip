@@ -149,18 +149,20 @@ var CHIPPER = module.exports = {
 	},	
 	
 	ingestCache: function (sql, fileID, cb) {  // ingest the evcache into the events with callback(aoi,events)
-		Log( sql.query(  // ingest evcache into events history by determining which voxel they fall within
+		
+		sql.all(  // ingest evcache into events history by determining which voxel they fall within
+			"INGEST",
+			
 			"INSERT INTO app.events SELECT evcache.*,voxels.ID AS voxelID "
 			+ "FROM app.evcache "
 			+ "LEFT JOIN app.voxels ON st_contains(voxels.Ring,evcache.Point) AND "
 			+ "evcache.z BETWEEN voxels.minAlt AND voxels.maxAlt WHERE ? ",
 			
-			{fileID:fileID},
+			{"evcache.fileID":fileID},
 			
-			function (err, info) {
+			function (info, err) {
 
-			Trace( "VOXELIZED " + (err ? 0 : info.affectedRows) + " EVENTS" );
-			Log(err, info);
+			Trace( "VOXELIZE " + (err || (info.affectedRows + " EVENTS")) );
 				
 			sql.query(
 				"SELECT min(x) AS xMin, max(x) AS xMax, "
@@ -180,7 +182,7 @@ var CHIPPER = module.exports = {
 					if (!err) cb( aois[0], evs );
 				});
 			});
-		}).sql );
+		});
 	},
 
 	ingestSink: function (sql, filter, fileID, cb) {  // return stream to sink evcache pipe with callback(aoi, events).
@@ -223,7 +225,7 @@ var CHIPPER = module.exports = {
 		sink.on("finish", function () {
 			sql.endBulk();
 			
-			Trace(`INGESTED ${ingested} EVENTS FILE ${fileID}`);
+			Trace(`INGEST ${ingested} EVENTS FROM FILE${fileID}`);
 			
 			if ( ingested )
 				CHIPPER.ingestCache(sql, fileID, cb);
