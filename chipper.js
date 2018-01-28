@@ -50,7 +50,7 @@ var CHIPPER = module.exports = {
 	aoi: null, 			//< current aoi being processed
 	limit: 1e99, 		//< max numbers of chips to pull over any aoi
 	
-	chipEvents: function ( req, ctx, cb ) {  // callback cb(events)
+	chipEvents: function ( req, ctx, cb ) {  // callback cb(job)
 		
 		var 
 			sql = req.sql,
@@ -98,8 +98,8 @@ var CHIPPER = module.exports = {
 			cb( job );
 		}
 		
-		else
-			sql.each( regmsg,  get.files, {Name: file}, function (file) {
+		else  // fetching from db
+			sql.each( regmsg,  get.files, {Name: file}, function (file) {  // regulate requested file(s)
 
 				job.File = Copy( file, {} );
 				where.fileID = file.ID;
@@ -119,15 +119,13 @@ var CHIPPER = module.exports = {
 							dsargs: dsargs
 						}), function (sql, job) {
 
-							sql.getRecords( regmsg, job.dsevs, job.dsargs, function (err, evs) {  // return events for this chip
-								if (!err) cb(evs);
-							});
+							sql.all( regmsg, job.dsevs, job.dsargs, cb );
 
 						});
 					});
 
 				else
-				if (Job.aoi)  // regulate events
+				if (Job.aoi)  // regulate events by voxel
 					sql.each( "VOXEL"+regmsg, get.voxels, [ toPolygon(Job.aoi) ], function (voxel) {
 
 						where.voxelID = voxel.ID;
@@ -141,10 +139,15 @@ var CHIPPER = module.exports = {
 						});
 					});
 
-				else  // pull all events
-					sql.getRecords( `EVENTGET ${job.name}`, get.events, [ req.group, req.group, where, limit ], function (err, evs) {
+				else  { // pull all events
+					job.Load = sql.format(get.events, [where,limit,offset] );
+					job.Dump = "";
+					cb(job);
+				}					
+					/*
+					sql.all( regmsg, get.events, [ req.group, req.group, where, limit ], function (err, evs) {
 						cb( err ? null : evs );
-					});
+					}); */
 			});
 	},	
 	
