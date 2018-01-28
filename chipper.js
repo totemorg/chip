@@ -148,7 +148,7 @@ var CHIPPER = module.exports = {
 			});
 	},	
 	
-	ingestCache: function (sql, fileID, cb) {  // ingest the evcache into the events with callback(aoi,events)
+	ingestCache: function (sql, fileID, cb) {  // ingest the evcache into the events with callback cb(aoi)
 		
 		sql.all(  // ingest evcache into events history by determining which voxel they fall within
 			"INGEST",
@@ -160,32 +160,40 @@ var CHIPPER = module.exports = {
 			
 			{"evcache.fileID":fileID},
 			
-			function (info, err) {
+			function (info) {
 
-			Trace( "VOXELIZE " + (err || (info.affectedRows + " EVENTS")) );
+			sql.first(
+				"INGEST",
 				
-			sql.query(
-				"SELECT min(x) AS xMin, max(x) AS xMax, "
+				"SELECT "
+				+ "? AS Voxelized, "
+				+ "min(x) AS xMin, max(x) AS xMax, "
 				+ "min(y) AS yMin, max(y) AS yMax, "
 				+ "min(z) AS zMin, max(z) AS zMax, "
-				+ "min(t) AS tMin, max(t) AS tMax, "
+				// + "min(t) AS tMin, max(t) AS tMax, "
+				+ "max(t)+1 AS Steps, "
 				+ "max(u)+1 AS States, "
 				+ "max(n)+1 AS Actors, "
-				+ "count(id) AS Samples, "
-				+ "max(t) AS Steps FROM app.evcache WHERE ?", 
-				{fileID:fileID},	
-				function (err, aois) {
+				+ "count(id) AS Samples "
+				+ "FROM app.evcache WHERE ?", 
 				
-				sql.query(  // return ingested events 
-					"SELECT * FROM app.evcache ORDER BY t", function (err,evs) {
-
-					if (!err) cb( aois[0], evs );
-				});
-			});
+				[ info.affectedRows, {fileID:fileID} ],	cb);
+				
+				/*
+				function (aoi) {
+				
+					sql.all(  // return ingested events 
+						"INGEST",
+						"SELECT * FROM app.evcache WHERE ? ORDER BY t", 
+						{fileID:fileID},
+						function (evs) {
+							cb( aoi, evs );
+					});
+			});  */
 		});
 	},
 
-	ingestSink: function (sql, filter, fileID, cb) {  // return stream to sink evcache pipe with callback(aoi, events).
+	ingestSink: function (sql, filter, fileID, cb) {  // return stream to sink evcache pipe with callback cb(aoi).
 		var 
 			ingested = 0,
 			sink = new STREAM.Writable({
@@ -225,16 +233,44 @@ var CHIPPER = module.exports = {
 		sink.on("finish", function () {
 			sql.endBulk();
 			
-			Trace(`INGEST ${ingested} EVENTS FROM FILE${fileID}`);
+			//Trace(`INGEST ${ingested} EVENTS FROM FILE${fileID}`);
 			
 			if ( ingested )
-				CHIPPER.ingestCache(sql, fileID, cb);
+				CHIPPER.ingestCache(sql, fileID, function (aoi) {
+					cb(aoi);
+					
+					var
+						TL = [aoi.yMax, aoi.xMin],   // [lon,lat] degs
+						TR = [aoi.yMax, aoi.xMax],
+						BL = [aoi.yMin, aoi.xMin],
+						BR = [aoi.yMin, aoi.xMax], 
+						Ring = [ TL, TR, BR, BL, TL ];
+
+					sql.all(
+						"INGEST",
+						"UPDATE app.files SET ?,Ring=st_GeomFromText(?) WHERE ?", [{
+							States: aoi.States,
+							Steps: aoi.Steps,
+							Actors: aoi.Actors,
+							Samples: aoi.Samples,
+							Voxelized: aoi.Voxelized,
+							coherence_time: aoi.coherence_time,
+							coherence_intervals: aoi.coherence_intervals,
+							mean_jump_rate: aoi.mean_jump_rate,
+							degeneracy: aoi.degeneracy,
+							snr: aoi.snr
+						},
+						toPolygon( Ring ), 
+						{ID: fileID} 
+					]);
+					
+				});
 		});
 		
 		return sink;
 	},
 	
-	ingestList: function (sql, evs, fileID, cb) { // ingest events from supplied list with callback cb(aoi, events).
+	ingestList: function (sql, evs, fileID, cb) { // ingest events from supplied list with callback cb(aoi).
 	/**
 	@member CHIPPER
 	@private
@@ -259,7 +295,7 @@ var CHIPPER = module.exports = {
 		src.pipe(sink);
 	},
 	
-	ingestFile: function (sql, filePath, fileID, cb) {  // ingest events from file path with callback(aoi, events).
+	ingestFile: function (sql, filePath, fileID, cb) {  // ingest events from file path with callback cb(aoi).
 	/**
 	@member CHIPPER
 	@private
@@ -269,7 +305,7 @@ var CHIPPER = module.exports = {
 	@param {Function} cb Response callback( ingested aoi, cb (table,id) to return info )
 	Ingest events and autorun ingestable plugins if enabled.
 	*/
-		Trace(`INGEST FILE ${filePath}`);
+		//Trace(`INGEST FILE ${filePath}`);
 		function filter(buf, cb) {
 			buf.split("\n").each( function (n,rec) {
 				if (rec) 
@@ -285,10 +321,10 @@ var CHIPPER = module.exports = {
 		}
 		
 		var
-			srcStream = FS.createReadStream(filePath,"utf8"),
-			sinkStream = CHIPPER.ingestSink(sql, filter, fileID, cb);
+			src = FS.createReadStream(filePath,"utf8"),
+			sink = CHIPPER.ingestSink(sql, filter, fileID, cb);
 
-		srcStream.pipe(sinkStream);
+		src.pipe(sink); // ingest events into db
 	},
 		
 	ingestService: function (chan, cb) {  // ingest events from service channel
