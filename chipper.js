@@ -50,105 +50,218 @@ var CHIPPER = module.exports = {
 	aoi: null, 			//< current aoi being processed
 	limit: 1e99, 		//< max numbers of chips to pull over any aoi
 	
-	chipEvents: function ( req, ctx, cb ) {  // callback cb(job)
+	chipEvents: function ( req, Job, cb ) {  // callback cb(job)
 		
 		var 
-			sql = req.sql,
-			pos = 0, 
-			Job = ctx.Job,
-			group = Job.group,
-			where = Job.where || {},
-			order = Job.order || "t",
-			limit = Job.limit || 1000,
-			file = Job.file,
-			src = `${req.group}.events`, //"??.events LEFT JOIN ??.voxels ON events.voxelID = voxels.ID ",
-			fields = "*",
-			offset = Job.offset || 0, 
-			get = {
-				events: `SELECT ${fields} FROM ${src} WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
-				chips: `SELECT ${group} FROM ${src} GROUP BY ${group} `,
-				voxels: "SELECT * FROM app.voxels WHERE MBRcontains(ST_GeomFromText(?), Ring)", 
-				files: "SELECT * FROM app.files WHERE ?"
-			},
-			job = { // job descriptor for regulator
-				qos: req.profile.QoS, 
-				priority: 0,
-				client: req.client,
-				class: req.table,
-				credit: req.profile.Credit,
-				name: req.table,
-				task: Job.task || "",
-				notes: [
-						req.table.tag("?",req.query).tag("a", {href:"/" + req.table + ".run"}), 
-						((req.profile.Credit>0) ? "funded" : "unfunded").tag("a",{href:req.url}),
-						"RTP".tag("a", {
-							href:`/rtpsqd.view?task=${Job.task}`
-						}),
-						"PMR brief".tag("a", {
-							href:`/briefs.view?options=${Job.task}`
-						})
-				].join(" || ")
-			},
-			regmsg = `REG ${job.name}@${job.qos}`;
+			sql = req.sql;
 
-		if ( file.charAt(0) == "/" ) {  // fetching from a totem compliant data service
-			job.Load = file.tag("?",Job);
-			job.Dump = "";
+		function regulateJob( Job ) {
 
-			cb( job );
-		}
-		
-		else  // fetching from db
-			sql.each( regmsg,  get.files, {Name: file}, function (file) {  // regulate requested file(s)
+			function regulateVoxels( ring ) {
+				sql.each( "VOXEL"+regmsg, get.voxels, [ toPolygon(ring) ], function (voxel) {
 
-				job.File = Copy( file, {} );
-				where.fileID = file.ID;
+					where.voxelID = voxel.ID;
 
-				if ( group )  // regulate chips 
-					sql.each( regmsg, get.chips, [ req.group, req.group, req, group ], function (chip) {  // process each chip
-						var 
-							dswhere = Copy(where,{}),
-							dsargs = [req.group, req.group, dswhere, limit];
-
-						Each(chip, function (key,val) {
-							dswhere[key] = val;
-						});
-
-						sql.insertJob( Copy(job, {  // put job into the job queue
-							dsevs: getEvents,
-							dsargs: dsargs
-						}), function (sql, job) {
-
-							sql.all( regmsg, job.dsevs, job.dsargs, cb );
-
-						});
-					});
-
-				else
-				if (Job.aoi)  // regulate events by voxel
-					sql.each( "VOXEL"+regmsg, get.voxels, [ toPolygon(Job.aoi) ], function (voxel) {
-
-						where.voxelID = voxel.ID;
-
-						job.Voxel = Copy( voxel, {} );
-						job.Load = sql.format(get.events, [where,limit,offset] );
-						job.Dump = "";
-
-						sql.insertJob( Copy(job,{}), function (sql, job) {  // put job into the job queue
-							cb( job );
-						});
-					});
-
-				else  { // pull all events
+					job.Voxel = Copy( voxel, {} );
 					job.Load = sql.format(get.events, [where,limit,offset] );
 					job.Dump = "";
-					cb(job);
-				}					
-					/*
-					sql.all( regmsg, get.events, [ req.group, req.group, where, limit ], function (err, evs) {
-						cb( err ? null : evs );
-					}); */
+
+					sql.insertJob( Copy(job,{}), function (sql, job) {  // put job into the job queue
+						cb( job );
+					});
+				});
+			}
+					
+			var 
+				group = Job.group,
+				where = Job.where || {},
+				order = Job.order || "t",
+				limit = Job.limit || 1000,
+				file = Job.file,
+				src = `${req.group}.events`, //"??.events LEFT JOIN ??.voxels ON events.voxelID = voxels.ID ",
+				fields = "*",
+				offset = Job.offset || 0, 
+				get = {
+					events: `SELECT ${fields} FROM ${src} WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
+					chips: `SELECT ${group} FROM ${src} GROUP BY ${group} `,
+					voxels: "SELECT * FROM app.voxels WHERE MBRcontains(ST_GeomFromText(?), Ring)", 
+					files: "SELECT * FROM app.files WHERE ?"
+				},
+				job = { // job descriptor for regulator
+					qos: req.profile.QoS, 
+					priority: 0,
+					client: req.client,
+					class: req.table,
+					credit: req.profile.Credit,
+					name: req.table,
+					task: Job.task || "",
+					notes: [
+							req.table.tag("?",req.query).tag("a", {href:"/" + req.table + ".run"}), 
+							((req.profile.Credit>0) ? "funded" : "unfunded").tag("a",{href:req.url}),
+							"RTP".tag("a", {
+								href:`/rtpsqd.view?task=${Job.task}`
+							}),
+							"PMR brief".tag("a", {
+								href:`/briefs.view?options=${Job.task}`
+							})
+					].join(" || ")
+				},
+				regmsg = `REG ${job.name}@${job.qos}`;
+
+			if ( file.charAt(0) == "/" ) {  // fetching from a totem compliant data service
+				job.Load = file.tag("?",Job);
+				job.Dump = "";
+
+				cb( job );
+			}
+
+			else
+			if (Job.voi) // regulate a VOI
+				CHIPS.chipVOI(Job, job, function (voxel,stats,sql) {
+					sqlThread( function (sql) {
+						//Log({save:stats});
+						saveResults( stats, voxel );
+					});
+				});
+
+			else
+			if (Job.divs) { // create VOI
+				var offs = Job.offs, dims = Job.dims, divs = Job.divs, t = 0;
+
+				sql.beginBulk();
+
+				for (var z=offs[2], zmax=z+dims[2], zinc=(zmax-z) / divs[2]; z<zmax; z+=zinc)
+				for (var y=offs[1], ymax=y+dims[1], yinc=(ymax-y) / divs[1]; y<ymax; y+=yinc)
+				for (var x=offs[0], xmax=x+dims[0], xinc=(xmax-x) / divs[0]; x<xmax; x+=xinc) {
+					var ring = [
+						[y,x],
+						[y+yinc,x],
+						[y+yinc,x+xinc],
+						[y,x+xinc],
+						[y,x]
+					];
+
+					sql.query(
+						"INSERT INTO ??.voxels SET ?,Ring=st_GeomFromText(?)", [
+						group, {
+							t: t,
+							minAlt: z,
+							maxAlt: z+zinc
+						},
+
+						'POLYGON((' + [  // [lon,lat] degs
+							ring[0].join(" "),
+							ring[1].join(" "),
+							ring[2].join(" "),
+							ring[3].join(" "),
+							ring[0].join(" ") ].join(",") +'))' 
+					]);
+				}
+
+				sql.endBulk();						
+			}
+
+			else
+			if (false)  // regulate a image chipping ring [ [lat,lon], ... ]
+				CHIPS.chipAOI(Job, job, function (chip,dets,sql) {
+					var updated = new Date();
+
+					//Log({save:dets});
+					sql.query(
+						"REPLACE INTO ??.chips SET ?,Ring=st_GeomFromText(?),Point=st_GeomFromText(?)", [ 
+							group, {
+								Thread: job.thread,
+								Save: JSON.stringify(dets),
+								t: updated,
+								x: chip.pos.lat,
+								y: chip.pos.lon
+							},
+							chip.ring,
+							chip.point
+					]);
+
+					// reserve voxel detectors above this chip
+					for (var vox=CHIPS.voxelSpecs,alt=vox.minAlt, del=vox.deltaAlt, max=vox.maxAlt; alt<max; alt+=del) 
+						sql.query(
+							"REPLACE INTO ??.voxels SET ?,Ring=st_GeomFromText(?),Point=st_GeomFromText(?)", [
+							group, {
+								Thread: job.thread,
+								Save: null,
+								t: updated,
+								x: chip.pos.lat,
+								y: chip.pos.lon,
+								z: alt
+							},
+							chip.ring,
+							chip.point
+						]);
+
+				});
+		
+			else  // regulate events db
+				sql.each( regmsg,  get.files, {Name: file}, function (file) {  // regulate requested file(s)
+
+					job.File = Copy( file, {} );
+					where.fileID = file.ID;
+
+					if ( group )  // regulate chips 
+						sql.each( regmsg, get.chips, [ req.group, req.group, req, group ], function (chip) {  // process each chip
+							var 
+								dswhere = Copy(where,{}),
+								dsargs = [req.group, req.group, dswhere, limit];
+
+							Each(chip, function (key,val) {
+								dswhere[key] = val;
+							});
+
+							sql.insertJob( Copy(job, {  // put job into the job queue
+								dsevs: getEvents,
+								dsargs: dsargs
+							}), function (sql, job) {
+
+								sql.all( regmsg, job.dsevs, job.dsargs, cb );
+
+							});
+						});
+
+					else
+					if (aoi = Job.aoi)  // regulate events by voxel
+						if ( aoi.constructor == String )
+							sql.each( "GETRING", "SELECT Ring FROM app.aois WHERE ?", {Name:aoi}, function (rec) {
+								try {
+									regulateVoxels( JSON.parse(rec.Ring) );
+								}
+								catch (err) {
+								}
+							});
+
+						else
+							regulateVoxels(aoi);
+
+					else  { // pull all events
+						job.Load = sql.format(get.events, [where,limit,offset] );
+						job.Dump = "";
+						cb(job);
+					}					
+						/*
+						sql.all( regmsg, get.events, [ req.group, req.group, where, limit ], function (err, evs) {
+							cb( err ? null : evs );
+						}); */
+				});
+		}
+		
+		if ( Job.constructor == String ) 
+			sql.each( "GETJOBS", "SELECT Job FROM apps.jobs WHERE ?", {Name:Job}, function (rec) {
+				try {
+					regulateJob( JSON.parse(rec.Job) );
+				}
+				catch (err) {
+				}
 			});
+		
+		else
+			regulateJob( Job );
+			
 	},	
 	
 	ingestCache: function (sql, fileID, cb) {  // ingest the evcache into the events with callback cb(aoi)
