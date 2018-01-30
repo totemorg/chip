@@ -22,8 +22,9 @@ export SRV_ESS="https://ess.nga.ic.gov"
 export WMS_ESS="$SRV_ESS?service=WMS&version=1.1.1&request=getMap&styles=population&srs=EPSG%3A4326&format=image%2Fpgn"
 export WFS_ESS="$SRV_ESS/ogc/rest/csw/record?caceResults=true&outputSchema=RESTfullView-1.1&streamable=all&responseFormat=json"
 
-export SRV_TOTEM="https://totem.west.ile.nga.ic.gov:8443"
- 
+export SRV_TOTEM="http://localhost:8080"
+export WMS_TOTEM="$SRV_TOTEM/wms"
+export WFS_TOTEM="$SRV_TOTEM/wfs" 
 
 # IDOP conversion utilities
 export IVA=$BASE/iva

@@ -1,5 +1,3 @@
-
-
 // UNCLASSIFIED
 
 var
@@ -43,14 +41,64 @@ var
 	Each = ENUM.each,
 	Log = console.log;
 
+Date.prototype.getJulian = function() {
+  return Math.ceil((this / 86400000) - (this.getTimezoneOffset()/1440) + 2440587.5);
+}
+
 var CHIPPER = module.exports = {
 	// set or optionally overridden by config()
+
+	fetch: {},
 	
-	fetch: {  // default data fetching services
+	fetchImage: function (keys, cb) {  // default image fetching service
+		if ( fetch = CHIPPER.fetch.wget ) 
+			fetch( CHIPPER.paths.images.tag("?", keys ), cb );
+		
+		else
+			Trace("Missing WMS image fetcher");
 	},
 	
 	aoi: null, 			//< current aoi being processed
 	limit: 1e99, 		//< max numbers of chips to pull over any aoi
+
+	make: { 
+		chip: function makeChip( parms, cb ) {
+			var chip = {
+				path: `./public/images/chips/${parms.ID}.jpg`
+			};
+
+			FS.stat(chip.path, function (err) { // check if chip in file cache
+				if (err)  // not in cache so prime it
+					if ( fetch = CHIPPER.fetch.wget )
+						fetch( CHIPPER.paths.images.tag("?", parms ), function (rtn) {
+							Log("fetch chip", parms.ID, rtn);
+							cb( rtn ? chip : null );
+						});
+				
+					else
+						cb(null);
+
+				else // in cache
+					cb(chip);
+			});
+		},
+
+		flux: function makeFlux( parms, cb) {
+			var tod = parms.tod;
+			cb( new SOLAR( tod.getJulian(), tod.getHours()/24, tod.getTimezoneOffset()/60, parms.lat, parms.lon) );
+		},
+
+		collects: function makeCollects( parms, cb) {
+
+			if ( fetch = CHIPPER.fetch.http ) 
+				fetch( CHIPPER.paths.catalog.tag("?", parms), function (cat) {
+					cb(cat);
+				});
+
+			else 
+				cb( null );
+		}
+	},				
 	
 	chipEvents: function ( req, Job, cb ) {  // callback cb(job)
 		
@@ -60,20 +108,122 @@ var CHIPPER = module.exports = {
 		function regulateJob( Job ) {
 
 			function regulateVoxels( ring ) {
-				sql.each( "VOXEL"+regmsg, get.voxels, [ toPolygon(ring) ], function (voxel) {
-
-					where.voxelID = voxel.ID;
-
-					job.Voxel = Copy( voxel, {} );
-					job.Load = sql.format(get.events, [where,limit,offset] );
-					job.Dump = "";
-
-					sql.insertJob( Copy(job,{}), function (sql, job) {  // put job into the job queue
-						cb( job );
+				
+				function cache( opts, cb ) {
+					sql.first( 
+						"CACHE", 
+						"SELECT Results FROM app.cache WHERE least(?) LIMIT 1", 
+						[ opts.key ], function (rec) {
+						if (rec) 
+							try {
+								cb( JSON.parse(rec.Results) );
+							}
+							catch (err) {
+								cb( opts.default );
+							}
+						
+						else
+						if ( opts.make )
+							opts.make( opts.parms, function (res) {
+								sql.query( 
+									"INSERT INTO app.cache SET Results=?,?", 
+									[ JSON.stringify(res || opts.default), opts.key ], 
+									function (err) {
+										//Log("update cache", err);
+										cb( res );
+								});
+							});
+							
+						else
+							cb( opts.default );
 					});
+				}
+								
+				var
+					makeChip = CHIPPER.make.chip,
+					makeFlux = CHIPPER.make.flux,
+					makeCollects = CHIPPER.make.collects;
+				
+				sql.each(
+					"REG", 
+					"SELECT ID,Point,chipID,Ring FROM app.voxels WHERE MBRcontains(geomFromText(?), voxels.Ring) GROUP BY chipID", 
+					[ toPolygon(ring) ], function (voxel) {
+
+						cache({
+							key: {
+								Bank: "collects", 
+								cacheID: voxel.chipID,
+								t: 0
+							},
+							parms: { 
+								ring: ring
+							},
+							default: [],
+							make: makeCollects
+						}, function (collects) {
+					  
+							cache({
+								key: {
+									Bank: "chip", 
+									x: voxel.Point.x, 
+									y: voxel.Point.y,
+									t: 0
+								},
+								parms: { 
+									ID: voxel.chipID,
+									bbox: toBBox(voxel.Ring)
+								},
+								default: {
+									path: collects[0].url || "./shares/spoof.jpg"
+								},
+								make: makeChip
+							}, function (chip) {
+
+								cache({
+									key: {
+										Bank: "flux", 
+										x: voxel.Point.x, 
+										y: voxel.Point.y,
+										t: 0
+									},
+									parms: { 
+										lat: voxel.Point.x,
+										lon: voxel.Point.y,
+										tod: new Date()
+									},
+									default: null,
+									make: makeFlux
+								}, function (flux) {
+
+									sql.each( 
+										"REG",
+										"SELECT * FROM app.voxels WHERE ?",
+										[ {chipID: voxel.chipID} ], function (voxel) {
+
+											where.voxelID = voxel.ID;
+
+											job.Voxel = Copy( voxel, {} );
+											job.Load = sql.format(get.events, [where,limit,offset] );
+											job.Flux = flux;
+											job.Collects = collects;
+											job.Dump = "";
+
+											Log("reg job",job);
+
+											// test chipID if over ground truth site then start a ROC workflow
+
+											sql.insertJob( Copy(job,{}), function (sql, job) {  // put job into the job queue
+												cb( job );
+											});
+										});	
+
+								});
+							});
+					});
+					
 				});
 			}
-					
+
 			var 
 				group = Job.group,
 				where = Job.where || {},
@@ -86,7 +236,7 @@ var CHIPPER = module.exports = {
 				get = {
 					events: `SELECT ${fields} FROM ${src} WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
 					chips: `SELECT ${group} FROM ${src} GROUP BY ${group} `,
-					voxels: "SELECT * FROM app.voxels WHERE MBRcontains(ST_GeomFromText(?), Ring)", 
+					voxels: "SELECT * FROM app.voxels WHERE ?", 
 					files: "SELECT * FROM app.files WHERE ?"
 				},
 				job = { // job descriptor for regulator
@@ -110,16 +260,22 @@ var CHIPPER = module.exports = {
 				},
 				regmsg = `REG ${job.name}@${job.qos}`;
 
-			if ( file.charAt(0) == "/" ) {  // fetching from a totem compliant data service
-				job.Load = file.tag("?",Job);
-				job.Dump = "";
+			if ( file.charAt(0) == "/" ) {  // fetch data from service
 
-				cb( job );
+				if ( file.indexOf(".")>=0 ) { // fetching events from totem plugin.case
+					job.Load = file.tag("?",Job);
+					job.Dump = "";
+					cb( job );
+				}
+
+				else // fetching chips from totem catalog service
+					CHIPPER.fetchCatalog( function (cat) {
+					});
 			}
 
 			else
 			if (Job.voi) // regulate a VOI
-				CHIPS.chipVOI(Job, job, function (voxel,stats,sql) {
+				CHIPPER.chipVOI(Job, job, function (voxel,stats,sql) {
 					sqlThread( function (sql) {
 						//Log({save:stats});
 						saveResults( stats, voxel );
@@ -165,7 +321,7 @@ var CHIPPER = module.exports = {
 
 			else
 			if (false)  // regulate a image chipping ring [ [lat,lon], ... ]
-				CHIPS.chipAOI(Job, job, function (chip,dets,sql) {
+				CHIPPER.chipAOI(Job, job, function (chip,dets,sql) {
 					var updated = new Date();
 
 					//Log({save:dets});
@@ -183,7 +339,7 @@ var CHIPPER = module.exports = {
 					]);
 
 					// reserve voxel detectors above this chip
-					for (var vox=CHIPS.voxelSpecs,alt=vox.minAlt, del=vox.deltaAlt, max=vox.maxAlt; alt<max; alt+=del) 
+					for (var vox=CHIPPER.voxelSpecs,alt=vox.minAlt, del=vox.deltaAlt, max=vox.maxAlt; alt<max; alt+=del) 
 						sql.query(
 							"REPLACE INTO ??.voxels SET ?,Ring=st_GeomFromText(?),Point=st_GeomFromText(?)", [
 							group, {
@@ -199,7 +355,7 @@ var CHIPPER = module.exports = {
 						]);
 
 				});
-		
+
 			else  // regulate events db
 				sql.each( regmsg,  get.files, {Name: file}, function (file) {  // regulate requested file(s)
 
@@ -229,7 +385,7 @@ var CHIPPER = module.exports = {
 					else
 					if (aoi = Job.aoi)  // regulate events by voxel
 						if ( aoi.constructor == String )
-							sql.each( "GETRING", "SELECT Ring FROM app.aois WHERE ?", {Name:aoi}, function (rec) {
+							sql.each( "REG", "SELECT Ring FROM app.aois WHERE ?", {Name:aoi}, function (rec) {
 								try {
 									regulateVoxels( JSON.parse(rec.Ring) );
 								}
@@ -245,25 +401,20 @@ var CHIPPER = module.exports = {
 						job.Dump = "";
 						cb(job);
 					}					
-						/*
-						sql.all( regmsg, get.events, [ req.group, req.group, where, limit ], function (err, evs) {
-							cb( err ? null : evs );
-						}); */
 				});
 		}
-		
+
 		if ( Job.constructor == String ) 
-			sql.each( "GETJOBS", "SELECT Job FROM apps.jobs WHERE ?", {Name:Job}, function (rec) {
+			sql.each( "REG", "SELECT Job FROM apps.jobs WHERE ?", {Name:Job}, function (rec) {
 				try {
 					regulateJob( JSON.parse(rec.Job) );
 				}
 				catch (err) {
 				}
 			});
-		
+
 		else
 			regulateJob( Job );
-			
 	},	
 	
 	ingestCache: function (sql, fileID, cb) {  // ingest the evcache into the events with callback cb(aoi)
@@ -656,12 +807,12 @@ var CHIPPER = module.exports = {
 		}
 		
 		var 
-			impath = CHIPPER.fetch.save.wgetout = CHIPPER.paths.images + chip.fileID ,
-			fetch = CHIPPER.fetch.image;
+			fetchImage = CHIPPER.fetchImage,
+			impath = fetchImage.wgetout = CHIPPER.paths.images + chip.fileID;
 		
 		FS.stat(impath, function (err) { // check if chip in cache
 			if (err)  // not in cache
-				fetch( {bbox:chip.bbox.join(",")}, function (rtn) {
+				fetchImage( {bbox:chip.bbox.join(",")}, function (rtn) {
 					//console.log({fetchimage: rtn});
 
 					Trace("FETCH "+chip.fileID);
@@ -683,7 +834,8 @@ var CHIPPER = module.exports = {
 	},
 	
 	paths: {
-		images: ENV.CHIPS,
+		images: ENV.SRV_TOTEM+"/shares/spoof.jpg", //ENV.WMS_TOTEM,
+		catalog: ENV.WFS_TOTEM,
 		tips: ENV.TIPS
 	},
 
@@ -1047,7 +1199,7 @@ function SOLAR(day,tod,tz,lat,lon) {
 	function cos(x) { return Math.cos(D2R * x); }
 	function tan(x) { return Math.tan(D2R * x); }
 	function tan(x) { return Math.tan(D2R * x); }
-	function atan2(x) { return R2D * Math.atan2(x,y); }
+	function atan2(x,y) { return R2D * Math.atan2(x,y); }  // was atan2(x)
 	function asin(x) { return R2D * Math.asin(x); }
 	function acos(x) { return R2D * Math.acos(x); }
 	function pow(x,a) { return Math.pow(x,a); }
@@ -1070,7 +1222,7 @@ function SOLAR(day,tod,tz,lat,lon) {
 		srl = this.srl = gml + sec, // sun true lat [deg]
 		sta = this.sta = gma + sec,  // sun true anom
 		srv = this.srv = (1.000001018*(1-eeo*eeo)) / (1 + sec*cos(sta)), // sun radial vector [AUs]
-		sal = this.sal = stl - 0.0059 - 0.00478 * sin(125.04 - 1934.136 * jcen), // sun app lon [deg]
+		sal = this.sal = srl - 0.0059 - 0.00478 * sin(125.04 - 1934.136 * jcen), // sun app lon [deg]  (srl was stl?)
 		moe = this.moe = 23 + (26 + ((21.448 - jcen*(46.815 + jcen * (0.0059 - jcen*0.001813)))) / 60) / 60, // mean obliq ecliptic [deg]
 		oc = this.oc = moe + 0.00256 * cos(125.04 - 1934.136*jcen),  // obliq correction [deg]
 		sra = this.sra = atan2( cos(sal), cos(oc) * sin(sal) ),  // sun right ascention [deg]
@@ -1615,4 +1767,13 @@ function toPoint( u ) {  // [lon,lat] degs
 	return 	`POINT(${u[0]} ${u[1]})`
 }
 
+function toBBox(poly) {  // [ [lon,lat], ...] degs
+	var 
+		TL = poly[0][0],
+		BR = poly[0][3],
+		bbox = [TL[0], TL[1], BR[0], BR[1]];
+	
+	return bbox.join(",");
+}
+	
 		
