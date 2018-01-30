@@ -126,7 +126,7 @@ var CHIPPER = module.exports = {
 						if ( opts.make )
 							opts.make( opts.parms, function (res) {
 								sql.query( 
-									"INSERT INTO app.cache SET Results=?,?", 
+									"INSERT INTO app.cache SET Added=now(), Results=?, ?", 
 									[ JSON.stringify(res || opts.default), opts.key ], 
 									function (err) {
 										//Log("update cache", err);
