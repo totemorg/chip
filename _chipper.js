@@ -33,7 +33,6 @@ var
 		]
 	}),
 	ENGINE = require("engine"),
-	RAN = require("randpr"),
 	STREAM = require("stream"),
 	LWIP = ENGINE.plugins.LWIP;
 
@@ -48,138 +47,274 @@ var CHIPPER = module.exports = {
 	fetch: {  // default data fetching services
 	},
 	
-	voxelSpecs: {
-		minAlt: 10,
-		maxAlt: 30,
-		deltaAlt: 0.5,
-		offsets: [33.9018, 70.0899, 10],  // lon deg,lat deg,alt kft
-		deltas: [0.1, 0.1, 0.5]
-		// delx = 33.9018-33.9063 = 0.0045 --> 0.001
-		// dely = 70.0899-70.0936 = 0.0037 --> 0.001
-	},
-	
 	aoi: null, 			//< current aoi being processed
 	limit: 1e99, 		//< max numbers of chips to pull over any aoi
 	
-	ingestCache: function (sql, cb) {  // ingest the evcache into the events with callback(aoi,grade)
-		var 
-			specs = CHIPPER.voxelSpecs,	
-			xDelta = specs.deltas[0],
-			yDelta = specs.deltas[1],
-			zDelta = specs.deltas[2]/2;
+	chipEvents: function ( req, Job, cb ) {  // callback cb(job)
 		
-		sql.query(  // ingest evcache into events history by determining which voxel they fall within
+		var 
+			sql = req.sql;
+
+		function regulateJob( Job ) {
+
+			function regulateVoxels( ring ) {
+				sql.each( "VOXEL"+regmsg, get.voxels, [ toPolygon(ring) ], function (voxel) {
+
+					where.voxelID = voxel.ID;
+
+					job.Voxel = Copy( voxel, {} );
+					job.Load = sql.format(get.events, [where,limit,offset] );
+					job.Dump = "";
+
+					sql.insertJob( Copy(job,{}), function (sql, job) {  // put job into the job queue
+						cb( job );
+					});
+				});
+			}
+					
+			var 
+				group = Job.group,
+				where = Job.where || {},
+				order = Job.order || "t",
+				limit = Job.limit || 1000,
+				file = Job.file,
+				src = `${req.group}.events`, //"??.events LEFT JOIN ??.voxels ON events.voxelID = voxels.ID ",
+				fields = "*",
+				offset = Job.offset || 0, 
+				get = {
+					events: `SELECT ${fields} FROM ${src} WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
+					chips: `SELECT ${group} FROM ${src} GROUP BY ${group} `,
+					voxels: "SELECT * FROM app.voxels WHERE MBRcontains(ST_GeomFromText(?), Ring)", 
+					files: "SELECT * FROM app.files WHERE ?"
+				},
+				job = { // job descriptor for regulator
+					qos: req.profile.QoS, 
+					priority: 0,
+					client: req.client,
+					class: req.table,
+					credit: req.profile.Credit,
+					name: req.table,
+					task: Job.task || "",
+					notes: [
+							req.table.tag("?",req.query).tag("a", {href:"/" + req.table + ".run"}), 
+							((req.profile.Credit>0) ? "funded" : "unfunded").tag("a",{href:req.url}),
+							"RTP".tag("a", {
+								href:`/rtpsqd.view?task=${Job.task}`
+							}),
+							"PMR brief".tag("a", {
+								href:`/briefs.view?options=${Job.task}`
+							})
+					].join(" || ")
+				},
+				regmsg = `REG ${job.name}@${job.qos}`;
+
+			if ( file.charAt(0) == "/" ) {  // fetching from a totem compliant data service
+				job.Load = file.tag("?",Job);
+				job.Dump = "";
+
+				cb( job );
+			}
+
+			else
+			if (Job.voi) // regulate a VOI
+				CHIPS.chipVOI(Job, job, function (voxel,stats,sql) {
+					sqlThread( function (sql) {
+						//Log({save:stats});
+						saveResults( stats, voxel );
+					});
+				});
+
+			else
+			if (Job.divs) { // create VOI
+				var offs = Job.offs, dims = Job.dims, divs = Job.divs, t = 0;
+
+				sql.beginBulk();
+
+				for (var z=offs[2], zmax=z+dims[2], zinc=(zmax-z) / divs[2]; z<zmax; z+=zinc)
+				for (var y=offs[1], ymax=y+dims[1], yinc=(ymax-y) / divs[1]; y<ymax; y+=yinc)
+				for (var x=offs[0], xmax=x+dims[0], xinc=(xmax-x) / divs[0]; x<xmax; x+=xinc) {
+					var ring = [
+						[y,x],
+						[y+yinc,x],
+						[y+yinc,x+xinc],
+						[y,x+xinc],
+						[y,x]
+					];
+
+					sql.query(
+						"INSERT INTO ??.voxels SET ?,Ring=st_GeomFromText(?)", [
+						group, {
+							t: t,
+							minAlt: z,
+							maxAlt: z+zinc
+						},
+
+						'POLYGON((' + [  // [lon,lat] degs
+							ring[0].join(" "),
+							ring[1].join(" "),
+							ring[2].join(" "),
+							ring[3].join(" "),
+							ring[0].join(" ") ].join(",") +'))' 
+					]);
+				}
+
+				sql.endBulk();						
+			}
+
+			else
+			if (false)  // regulate a image chipping ring [ [lat,lon], ... ]
+				CHIPS.chipAOI(Job, job, function (chip,dets,sql) {
+					var updated = new Date();
+
+					//Log({save:dets});
+					sql.query(
+						"REPLACE INTO ??.chips SET ?,Ring=st_GeomFromText(?),Point=st_GeomFromText(?)", [ 
+							group, {
+								Thread: job.thread,
+								Save: JSON.stringify(dets),
+								t: updated,
+								x: chip.pos.lat,
+								y: chip.pos.lon
+							},
+							chip.ring,
+							chip.point
+					]);
+
+					// reserve voxel detectors above this chip
+					for (var vox=CHIPS.voxelSpecs,alt=vox.minAlt, del=vox.deltaAlt, max=vox.maxAlt; alt<max; alt+=del) 
+						sql.query(
+							"REPLACE INTO ??.voxels SET ?,Ring=st_GeomFromText(?),Point=st_GeomFromText(?)", [
+							group, {
+								Thread: job.thread,
+								Save: null,
+								t: updated,
+								x: chip.pos.lat,
+								y: chip.pos.lon,
+								z: alt
+							},
+							chip.ring,
+							chip.point
+						]);
+
+				});
+		
+			else  // regulate events db
+				sql.each( regmsg,  get.files, {Name: file}, function (file) {  // regulate requested file(s)
+
+					job.File = Copy( file, {} );
+					where.fileID = file.ID;
+
+					if ( group )  // regulate chips 
+						sql.each( regmsg, get.chips, [ req.group, req.group, req, group ], function (chip) {  // process each chip
+							var 
+								dswhere = Copy(where,{}),
+								dsargs = [req.group, req.group, dswhere, limit];
+
+							Each(chip, function (key,val) {
+								dswhere[key] = val;
+							});
+
+							sql.insertJob( Copy(job, {  // put job into the job queue
+								dsevs: getEvents,
+								dsargs: dsargs
+							}), function (sql, job) {
+
+								sql.all( regmsg, job.dsevs, job.dsargs, cb );
+
+							});
+						});
+
+					else
+					if (aoi = Job.aoi)  // regulate events by voxel
+						if ( aoi.constructor == String )
+							sql.each( "GETRING", "SELECT Ring FROM app.aois WHERE ?", {Name:aoi}, function (rec) {
+								try {
+									regulateVoxels( JSON.parse(rec.Ring) );
+								}
+								catch (err) {
+								}
+							});
+
+						else
+							regulateVoxels(aoi);
+
+					else  { // pull all events
+						job.Load = sql.format(get.events, [where,limit,offset] );
+						job.Dump = "";
+						cb(job);
+					}					
+						/*
+						sql.all( regmsg, get.events, [ req.group, req.group, where, limit ], function (err, evs) {
+							cb( err ? null : evs );
+						}); */
+				});
+		}
+		
+		if ( Job.constructor == String ) 
+			sql.each( "GETJOBS", "SELECT Job FROM apps.jobs WHERE ?", {Name:Job}, function (rec) {
+				try {
+					regulateJob( JSON.parse(rec.Job) );
+				}
+				catch (err) {
+				}
+			});
+		
+		else
+			regulateJob( Job );
+			
+	},	
+	
+	ingestCache: function (sql, fileID, cb) {  // ingest the evcache into the events with callback cb(aoi)
+		
+		sql.all(  // ingest evcache into events history by determining which voxel they fall within
+			"INGEST",
+			
 			"INSERT INTO app.events SELECT evcache.*,voxels.ID AS voxelID "
 			+ "FROM app.evcache "
 			+ "LEFT JOIN app.voxels ON st_contains(voxels.Ring,evcache.Point) AND "
-			+ "evcache.z BETWEEN voxels.z-? AND voxels.z+? AND voxels.Enabled "
-			+ "HAVING voxelID", 
+			+ "evcache.z BETWEEN voxels.minAlt AND voxels.maxAlt WHERE ? ",
 			
-			[ zDelta, zDelta ],
+			{"evcache.fileID":fileID},
 			
-			function (err, info) {
+			function (info) {
 
-			Trace( "GRADING " + (err ? 0 : info.affectedRows) + " EVENTS" );
+			sql.first(
+				"INGEST",
 				
-			sql.query(
-				"SELECT min(x)-? AS xMin, max(x)+? AS xMax, "
-				+ "min(y)-? AS yMin, max(y)+? AS yMax, "
+				"SELECT "
+				+ "? AS Voxelized, "
+				+ "min(x) AS xMin, max(x) AS xMax, "
+				+ "min(y) AS yMin, max(y) AS yMax, "
 				+ "min(z) AS zMin, max(z) AS zMax, "
-				+ "min(t) AS tMin, max(t) AS tMax FROM app.evcache", 
-				[xDelta,xDelta, yDelta,yDelta],	
-				function (err, aoi) {
-					
-				sql.query(  // grade the cache 
-					"SELECT * FROM app.evcache ORDER BY t", function (err,evs) {
-
-					if (!err) cb( aoi[0], {
-						credit: 0,
-						snr: 0,
-						Tc: 0,
-						M: 0
-					});
-						
-				});
-	
-				//sql.query("DELETE FROM app.evcache");
-			});
-		});
-	},
-
-	taskPlugin: function (aoi) {  // assign ingested aoi to ingestable plugins
-
-		var 
-			group = "app",
-			TL = [aoi.yMax, aoi.xMin],   // [lon,lat] degs
-			TR = [aoi.yMax, aoi.xMax],
-			BL = [aoi.yMin, aoi.xMin],
-			BR = [aoi.yMin, aoi.xMax], 
-			ring = {voiring:[ TL, TR, BR, BL, TL ]};
-
-		// add this aoi as a usecase to all applicable plugins 
-		sql.eachTable( group, function (table) {  // look for plugins that have a data loader and a Job key
-			var tarkeys = [], srckeys = [], hasJob = false;
-
-			// if (table == "gaussmix") // debug filter
-			if ( loader = DEBE.loaders[table] )
-				sql.query(  // get plugin usecase keys
-					"SHOW FIELDS FROM ??.?? WHERE Field != 'ID' ", 
-					[ group, table ], 
-					function (err,keys) {
-
-					keys.each( function (n,key) { // look for Job key
-						var keyesc = "`" + key.Field + "`";
-						switch (key.Field) {
-							case "Save":
-								break;
-							case "Job":
-								hasJob = true;
-							case "Name":
-								srckeys.push("? AS "+keyesc);
-								tarkeys.push(keyesc);
-								break;
-							default:
-								srckeys.push(keyesc);
-								tarkeys.push(keyesc);
-						}
-					});
-
-					if (hasJob) {
-						Trace( `TASK aoi-${ring.voiring} FOR ${table}` , sql );
-
-						sql.query( // add usecase to plugin by cloning its Name="ingest" usecase
-							"INSERT INTO ??.?? ("+tarkeys.join()+") SELECT "+srckeys.join()+" FROM ??.?? WHERE name='ingest' ", [
-								group, table,
-								"ingest " + new Date(),
-								JSON.stringify(ring),
-								group, table
-						], function (err, info) {
-
-							if ( !err && info.insertId )  // relay a fetch request to load the data with the usecase that was just added 
-								loader( {ID:info.insertId}, function (rtn) {
-									Trace(`AUTORUN ${table}`, sql);  // rtn = json parsed or null
-								});
-						});
-					}
-				});
+				// + "min(t) AS tMin, max(t) AS tMax, "
+				+ "max(t)+1 AS Steps, "
+				+ "max(u)+1 AS States, "
+				+ "max(n)+1 AS Actors, "
+				+ "count(id) AS Samples "
+				+ "FROM app.evcache WHERE ?", 
+				
+				[ info.affectedRows, {fileID:fileID} ],	cb);
+				
 				/*
-				sql.query(
-					"INSERT INTO haar (size,pixels,scale,step,range,detects,limit,name,job) "
-					+ "SELECT size,pixels,scale,step,range,detects,limit, ? AS name, ? AS job FROM haar WHEREname='ingest'", [
-						"ingest" + (++ingests),
-						JSON.stringify(ring)
-				]);
-			*/
+				function (aoi) {
+				
+					sql.all(  // return ingested events 
+						"INGEST",
+						"SELECT * FROM app.evcache WHERE ? ORDER BY t", 
+						{fileID:fileID},
+						function (evs) {
+							cb( aoi, evs );
+					});
+			});  */
 		});
 	},
 
-	ingestSink: function (sql, filter, cb) {  // return stream to sink event pipe to the evcache.  Assign ingested aoi to plugins
+	ingestSink: function (sql, filter, fileID, cb) {  // return stream to sink evcache pipe with callback cb(aoi).
 		var 
 			ingested = 0,
 			sink = new STREAM.Writable({
 				objectMode: true,
 				write: function (buf,en,cb) {
-					//Log(["ingest",buf.toString(), encoding]);
 					function cache(ev) {
 						ingested++;
 						sql.query(
@@ -188,19 +323,17 @@ var CHIPPER = module.exports = {
 								y: ev.y,
 								z: ev.z,
 								t: ev.t,
-								n: ev.n
+								n: ev.n,
+								u: ev.u,
+								fileID: fileID
 							},
-							`POINT(${ev.y} ${ev.x})`
+							toPoint( [ev.x, ev.y] )
 						]);
 					}
 					
 					if (filter) 
-						filter(buf, function (evs) {
-							evs.each( function (n, ev) {
-								cache(ev);
-							});
-						});
-					
+						filter(buf, cache);
+
 					else
 						cache(buf);
 					
@@ -208,24 +341,54 @@ var CHIPPER = module.exports = {
 				}
 			});
 		
+		sql.beginBulk();
+		
+		sql.query("DELETE FROM app.evcache WHERE ?",{fileID: fileID});
+		sql.query("DELETE FROM app.events WHERE ?",{fileID: fileID});
+		
 		sink.on("finish", function () {
-			Trace(`INGEST events RECS ${ingested}` , sql );
+			sql.endBulk();
 			
-			if ( ingested && CHIPPER.ingestCache )
-				CHIPPER.ingestCache(sql, function (aoi,grade) {
+			//Trace(`INGEST ${ingested} EVENTS FROM FILE${fileID}`);
+			
+			if ( ingested )
+				CHIPPER.ingestCache(sql, fileID, function (aoi) {
+					cb(aoi);
 					
-					cb(aoi,grade);
+					var
+						TL = [aoi.yMax, aoi.xMin],   // [lon,lat] degs
+						TR = [aoi.yMax, aoi.xMax],
+						BL = [aoi.yMin, aoi.xMin],
+						BR = [aoi.yMin, aoi.xMax], 
+						Ring = [ TL, TR, BR, BL, TL ];
+
+					sql.all(
+						"INGEST",
+						"UPDATE app.files SET ?,Ring=st_GeomFromText(?) WHERE ?", [{
+							States: aoi.States,
+							Steps: aoi.Steps,
+							Actors: aoi.Actors,
+							Samples: aoi.Samples,
+							Voxelized: aoi.Voxelized,
+							coherence_time: aoi.coherence_time,
+							coherence_intervals: aoi.coherence_intervals,
+							mean_jump_rate: aoi.mean_jump_rate,
+							degeneracy: aoi.degeneracy,
+							snr: aoi.snr
+						},
+						toPolygon( Ring ), 
+						{ID: fileID} 
+					]);
 					
-					if (CHIPPER.taskPlugin) CHIPPER.taskPlugin(aoi);
 				});
 		});
 		
 		return sink;
 	},
 	
-	ingestList: function (sql, evs, client) { // ingest events from supplied list
+	ingestList: function (sql, evs, fileID, cb) { // ingest events from supplied list with callback cb(aoi).
 	/**
-	@member DEBE
+	@member CHIPPER
 	@private
 	@method ingestList
 	@param {String} path to file, {streaming parms}, or [ ev, ... ] to ingest
@@ -233,7 +396,7 @@ var CHIPPER = module.exports = {
 	@param {Function} cb Response callback( ingested aoi, cb (table,id) to return info )
 	Ingest events and autorun ingestable plugins if enabled.
 	*/
-		Trace(`INGEST EVENTS FOR ${client}`, sql);
+		//Trace(`INGEST ${evs.length} EVENTS ON ${fileID}`);
 		
 		var 
 			n = 0, N = evs.length,
@@ -243,17 +406,14 @@ var CHIPPER = module.exports = {
 					this.push( evs[n++] || null );
 				}
 			}),
-			sink = CHIPPER.ingestSink(sql, null, function (aoi,grade) {
-				Trace( `CREDIT ${grade.credit} FOR ${client}`, sql );
-				sql.query("UPDATE app.profiles SET Credit=Credit+? WHERE Client=?", [grade.credit, client]);
-			});
+			sink = CHIPPER.ingestSink(sql, null, fileID, cb);
 		
-			src.pipe(sink);
+		src.pipe(sink);
 	},
 	
-	ingestFile: function (sql, path, name, client) {  // ingest events from supplied file path
+	ingestFile: function (sql, filePath, fileID, cb) {  // ingest events from file path with callback cb(aoi).
 	/**
-	@member DEBE
+	@member CHIPPER
 	@private
 	@method ingestFile
 	@param {String} path to file, {streaming parms}, or [ ev, ... ] to ingest
@@ -261,9 +421,9 @@ var CHIPPER = module.exports = {
 	@param {Function} cb Response callback( ingested aoi, cb (table,id) to return info )
 	Ingest events and autorun ingestable plugins if enabled.
 	*/
-		Trace(`INGEST ${name} FOR ${client}`, sql);
+		//Trace(`INGEST FILE ${filePath}`);
 		function filter(buf, cb) {
-			buf.toString().split("\n").each( function (n,rec) {
+			buf.split("\n").each( function (n,rec) {
 				if (rec) 
 					try {
 						cb( JSON.parse(rec) );
@@ -271,20 +431,16 @@ var CHIPPER = module.exports = {
 					
 					catch (err) {
 						var vals = rec.split(",");
-						cb([{ x: parseFloat(vals[0]), y: parseFloat(vals[1]), z: parseFloat(vals[2]), t: new Date(vals[3]), n: parseInt(vals[4]), u: parseInt(vals[5])  }]);
+						cb( { x: parseFloat(vals[0]), y: parseFloat(vals[1]), z: parseFloat(vals[2]), t: parseFloat(vals[3]), n: parseInt(vals[4]), u: parseInt(vals[5]) } );
 					}
 			});	
 		}
 		
 		var
-			src = FS.createReadStream(path),
-			sink = CHIPPER.ingestSink(sql, filter, function (aoi,grade) {
-				Trace( `CREDIT ${grade.credit} FOR ${client}`, sql );
-				sql.query("UPDATE app.profiles SET Credit=Credit+? WHERE Client=?", [grade.credit, client]);
-				sql.query("REPLACE INTO app.files SET ? WHERE Name=?", [Copy(grade,{Client:client}), name]);
-			});
+			src = FS.createReadStream(filePath,"utf8"),
+			sink = CHIPPER.ingestSink(sql, filter, fileID, cb);
 
-		src.pipe(sink);
+		src.pipe(sink); // ingest events into db
 	},
 		
 	ingestService: function (chan, cb) {  // ingest events from service channel
@@ -295,31 +451,12 @@ var CHIPPER = module.exports = {
 		
 		CHIPPER.thread( function (sql) {	
 			CHIPPER.fetch.events( {tmin:tmin,tmax:tmax}, function (evs) {
-				//Log({fetchevs:evs});
 				var 
 					n = 0,
 					str = CHIPPER.ingestStream( sql, "guest", function () {
 						var ev = evs[n++];
 						this.push( ev ? JSON.stringify([ev.x,ev.y,ev.z,ev.n]) : null );
 					}).pipe( str );
-
-				/*
-				if ( evs ) {
-					evs.each( function (n,ev) {
-						sql.query(
-							"INSERT INTO app.evcache SET ?, Point=st_GeomFromText(?)", [{
-								x: ev.x,
-								y: ev.y,
-								z: ev.z,
-								t: ev.t,
-								n: ev.n
-							},
-							`POINT(${ev.y} ${ev.x})`
-						]);
-					});
-
-					CHIPPER.ingestCache(sql, "guest", cb);
-				} */
 			});
 		});
 	},	
@@ -408,7 +545,7 @@ var CHIPPER = module.exports = {
 		function open(src, args, cb) {
 			LWIP.open(src, "jpg", function (err,img) {
 				if (err)
-					Log(err);
+					console.log(err);
 				else
 				if (cb)
 					cb(img.batch(), Copy({open:{width: img.width(), height: img.height()}}, args));
@@ -494,7 +631,7 @@ var CHIPPER = module.exports = {
 								};
 							
 							else
-								Log(["skip",n,i]);
+								console.log(["skip",n,i]);
 						}
 						
 						embedPositives(
@@ -523,7 +660,7 @@ var CHIPPER = module.exports = {
 		FS.stat(impath, function (err) { // check if chip in cache
 			if (err)  // not in cache
 				fetch( {bbox:chip.bbox.join(",")}, function (rtn) {
-					//Log({fetchimage: rtn});
+					//console.log({fetchimage: rtn});
 
 					Trace("FETCH "+chip.fileID);
 					if ( !err) runForecast(chip, det, cb);
@@ -620,13 +757,13 @@ var CHIPPER = module.exports = {
 		
 		if ( streamingWindow = CHIPPER.streamingWindow)
 			CHIPPER.ingestStreams(streamingWindow, function (twindow,status,sql) {
-				Log(twindow,status);
+				console.log(twindow,status);
 			});
 
 		return CHIPPER;
 	},
 	
-	ingestVOI: function (chan, det, cb) {
+	chipVOI: function (chan, det, cb) {
 		
 		function threadEngine( sql, cb ) { // start engine thread and provide engine steeper to the callback
 
@@ -646,14 +783,14 @@ var CHIPPER = module.exports = {
 					}
 				});
 
-			//Log(ctx);
+			//console.log(ctx);
 			ENGINE.run(req, function (ctx, step) { // start an engine thread
 				
 				if ( ctx )
 					cb( function(evs, obs) { // use this engine stepper
 						ctx.events = evs;
 						ctx.obs = obs;
-						if ( err = step() ) Trace( err );
+						if ( err = step() ) Trace(err);
 
 						return obs;
 					});
@@ -671,20 +808,12 @@ var CHIPPER = module.exports = {
 					ring = chan.voiring;
 
 				if (stepEngine)
-					sql.query( "SELECT * FROM app.voxels WHERE Enabled AND st_contains(st_GeomFromText(?), Point)"
-						.tagQuery( chan.whereVoxel ), [
-								'POLYGON((' + [  // [lon,lat] degs
-									ring[0].join(" "),
-									ring[1].join(" "),
-									ring[2].join(" "),
-									ring[3].join(" "),
-									ring[0].join(" ") ].join(",") +'))' ,
-							
-								chan.whereVoxel
-					])
+					sql.query( 
+						"SELECT * FROM app.voxels WHERE Enabled AND st_contains(st_GeomFromText(?), Point)"
+						.tagQuery( chan.whereVoxel ), [ toPolygon(ring) ] )
 
 					.on("result", function (voxel) {
-						//Log({ vox: voxel.ID} );
+						//console.log({ vox: voxel.ID} );
 
 						sql.query( 
 							"SELECT * FROM app.events WHERE ?"
@@ -694,13 +823,13 @@ var CHIPPER = module.exports = {
 							], 	function (err, evs) {
 								
 							//Copy( {events: events, scenario: voxel}, ctx);
-							Log({ vox: voxel.ID, evs: evs.length} );
+							console.log({ vox: voxel.ID, evs: evs.length} );
 							
 							if (evs.length) 
 								cb( voxel, stepEngine(evs, {}), sql);
 
 								/*ENGINE.select(req, function (rtn) {
-									Log({ev_ring_rtn:rtn});
+									console.log({ev_ring_rtn:rtn});
 									res( {evs: evs.length, scenario: voxel} );
 									if (query.Save)
 										sql.query("REPLACE INTO ?? SET ?", [ req.table, {Save: JSON.stringify(rtn)} ]);
@@ -709,7 +838,7 @@ var CHIPPER = module.exports = {
 					});
 				
 				else
-					Trace("BAD VOI ENGINE");
+					Trace("NO VOXEL ENGINE");
 
 			});
 		});
@@ -732,7 +861,7 @@ var CHIPPER = module.exports = {
 			}
 	},
 	
-	ingestAOI: function (chan, det, cb) {  // start detector on new sql thread
+	chipAOI: function (chan, det, cb) {  // start detector on new sql thread
 		
 		function threadEngine( sql, cb ) { // start engine thread and provide engine stepper to callback
 
@@ -768,7 +897,7 @@ var CHIPPER = module.exports = {
 			for (var n=0, Ndets = 3 /*aoi.Nf*aoi.Nf*/ ; n<Ndets ; n++) // opencv engines require a tau reserve
 				dets.push( {res:0} );
 
-			//Log({detreserve: dets.length});
+			//console.log({detreserve: dets.length});
 			
 			ENGINE.run(req, function (ctx, step) { // start an engine thread
 				
@@ -780,7 +909,7 @@ var CHIPPER = module.exports = {
 
 						ctx.detector.dets.each = Array.prototype.each;
 						ctx.detector.dets.each( function (n,det) {
-							//Log({det:det});
+							//console.log({det:det});
 							//if (det.job == "set") dets.push(det);
 							//dets.push(det);
 						});
@@ -801,11 +930,11 @@ var CHIPPER = module.exports = {
 			chan.geometryPolygon = JSON.stringify({rings: chan.aoiring});  // ring being monitored
 			delete chan.aoiring;
 
-			Log({collecting:chan});
+			console.log({collecting:chan});
 
 			fetch(chan, function (cat) {  // query catalog for desired data channel
 
-				//Log({fetchcat: cat});
+				//console.log({fetchcat: cat});
 				
 				if ( cat ) {
 					switch ( chan.source ) {  // normalize response to ess
@@ -837,7 +966,7 @@ var CHIPPER = module.exports = {
 
 						if (urls.wms) { // valid collects have a wms url
 							// ImageId == "12NOV16220905063EA00000 270000EA530040"
-							Trace(`COLLECT ${image.ImageId}`);
+							Trace("COLLECTED "+image.ImageId);
 
 							collects[image.ImageId] = {  // add collect to internal catalog
 								imported: new Date(image.ImportDate),
@@ -879,7 +1008,7 @@ var CHIPPER = module.exports = {
 		
 		var aoi = CHIPPER.aoi = new AOI( chan.aoiring, det.scale, det.pixels, det.size );
 		
-		Log({chipping_aoi: [aoi.lat.steps, aoi.lon.steps]});
+		console.log({chipping_aoi: [aoi.lat.steps, aoi.lon.steps]});
 					 
 		CHIPPER.thread( function (sql) {  // start a sql thread
 			threadEngine( sql, function (stepEngine) {  // start detector engine thread
@@ -1058,7 +1187,7 @@ function AOI(ring,Nf,Ns,gfd) {
 		dlon = acos(1 - u), 							// delta lon to keep chip height = chip width = gcd
 		dlat = acos(1 - u / pow(cos(lat),2)); 	// delta lat to keep chip height = chip width = gcd
 
-	//Log({aoi:ring,number_of_features:Nf,number_of_samples:Ns,gcd:gcd,gfd:gfd,lat:lat,lon:lon,dels: [dlat,dlon], ol:ol});	
+	//console.log({aoi:ring,number_of_features:Nf,number_of_samples:Ns,gcd:gcd,gfd:gfd,lat:lat,lon:lon,dels: [dlat,dlon], ol:ol});	
 
 	aoi.csd = gcd *1000/Ns; 		// chip sampling dimension [m]
 	aoi.gfs = round(Ns/Nf);	// ground feature samples [pixels]
@@ -1147,7 +1276,7 @@ function CHIP(aoi) {
 		TR = this.TR = new POS(lat.val+lat.del, lon.val+lon.del),
 		BR = this.BR = new POS(lat.val, lon.val+lon.del);
 		
-	//Log({lat: lat,lon: lon});
+	//console.log({lat: lat,lon: lon});
 	
 	var 
 		TLd = TL.deg(c), // [lat,lon] rads --> [lon,lat] degs
@@ -1156,14 +1285,8 @@ function CHIP(aoi) {
 		BRd = BR.deg(c); 
 		
 	this.bbox = [TLd[0], TLd[1], BRd[0], BRd[1]];   // [min lon,lat, max lon,lat]  (degs)
-	this.point = "POINT(" + TLd.join(" ") + ")"; // [lon,lat] degs
-	this.ring = "POLYGON((" + [ // [lon,lat] degs
-			TLd.join(" "),
-			BLd.join(" "),
-			BRd.join(" "),
-			TRd.join(" "),
-			TLd.join(" ")
-		].join(",") + "))";
+	this.point = toPoint(TLd);
+	this.ring = toPolygon( [TLd, BLd, BRd, TRd, TLd] );
 
 	switch (aoi.mode) { // advance lat,lon
 		case "curvedearth":
@@ -1202,7 +1325,7 @@ CHIP.prototype = {
 	forecast: function (f,det,model,obs,cb) {
 		var chip = this;
 		
-		Trace(`FORECAST ${det} WITH ${chip.fileID} USING ${model} AT ${f}%`);
+		Trace(`FORECASTING ${det} WITH ${chip.fileID} USING ${model} AT ${f}%`);
 		
 		var fchip = Copy(chip,{});
 		
@@ -1277,8 +1400,8 @@ CHIP.prototype = {
 	}
 }
 
-function Trace(msg,sql) {
-	ENUM.trace("C>",msg,sql);
+function Trace(msg,arg) {
+	ENUM.trace("C>",msg,arg);
 }
 
 function util(sql, runopt, input, rots, pads, flips) {
@@ -1474,5 +1597,20 @@ if (false) {
 			[70.0899, 33.9105] // BL
 		];
 
-	Log({deg: ring[0], rad: ring[0].pos(c), degrtn: ring[0].pos(c).deg(c)});
+	console.log({deg: ring[0], rad: ring[0].pos(c), degrtn: ring[0].pos(c).deg(c)});
 }
+
+function toPolygon(ring) {  // [ [lon,lat], ... ] degs
+	return 'POLYGON((' + [  
+		ring[0].join(" "),
+		ring[1].join(" "),
+		ring[2].join(" "),
+		ring[3].join(" "),
+		ring[0].join(" ") ].join(",") +'))' ;
+}
+
+function toPoint( u ) {  // [lon,lat] degs
+	return 	`POINT(${u[0]} ${u[1]})`
+}
+
+		
