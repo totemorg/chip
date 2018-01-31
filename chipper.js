@@ -787,11 +787,12 @@ var CHIPPER = module.exports = {
 		
 	},
 	
+	/*
 	tagCollect: function (chip, cb) {  // process all collects associated with requested chip with callback cb(chip) 
 		Each(CHIPPER.collects, function (n,collect) {  // tag chip with collect info
 			cb( Copy(collect, chip) );
 		});
-	},
+	}, */
 	
 	paths: {
 		images: ENV.SRV_TOTEM+"/shares/spoof.jpg", //ENV.WMS_TOTEM,
@@ -852,14 +853,38 @@ var CHIPPER = module.exports = {
 		return CHIPPER;
 	},
 	
-	voxelize: function (ring, det) {
-		
-		var aoi = CHIPPER.aoi = new AOI( ring, det.scale, det.pixels, det.size );
+	voxelize: function (sql,det,cb) {
+		var
+			ring = det.ring,
+			scale = det.scale,
+			pixels = det.pixels,
+			size = det.size,
+			aoi = new AOI( ring, scale, pixels, size );
+
 		aoi.chipArea(det, function (chip,sql) {
-			cb(chip, null, sql);
+			
+			sql.cache({
+				key: {
+					Bank: "chip", 
+					x1: chip.lat, 
+					x2: chip.lon,
+					t: 0
+				},
+				parms: { 
+					ID: voxel.chipID,
+					bbox: toBBox(voxel.Ring)
+				},
+				default: {
+					path: collects[0].url || "./shares/spoof.jpg"
+				},
+				make: null
+			}, function () {
+			};
+			
+			cb(chip, null, sql);			
 		});	
-		
 	}
+}		
 	
 };
 
@@ -1044,16 +1069,11 @@ AOI.prototype = {
 			aoi = this,
 			lat = this.lat,
 			lon = this.lon,
-			regulate = CHIPPER.regulate,
 			withinAOI = lat.val <= lat.max;
 		
-		if (withinAOI) // process if within aoi
-			CHIPPER.tagCollect( new CHIP(aoi), function (chip) {  // create a chip, tag it with collect info, then callback
-
-				if ( aoi.chips++ < CHIPPER.limit )  // process if max chips not reached
-					regulate(sql, chip, det, cb);
-			});
-				
+		if ( aoi.chips++ < CHIPPER.limit )  // process if max chips not reached
+			f( new CHIP(aoi), ..., cb)
+		
 		return withinAOI;	
 	},
 
@@ -1065,9 +1085,7 @@ AOI.prototype = {
 		CHIPPER.thread( function(sql) {  // start a thread to deposit chipping work into a job queue
 			
 			while ( aoi.getChip( sql, det, function (sql,chip) {  // while there is a chip in this aoi
-				CHIPPER.getImage( chip, det, function (chip) {  // prime pixels then process the chip
-					cb(chip,sql);
-				});
+				cb(chip,sql);
 			}) );
 			
 		});	
