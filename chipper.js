@@ -46,57 +46,47 @@ Date.prototype.getJulian = function() {
 }
 
 var CHIPPER = module.exports = {
-	// set or optionally overridden by config()
-
-	fetch: {},
+	/*
+	//fetchers: { }, //< reserved for data fetchers
 	
 	fetchImage: function (keys, cb) {  // default image fetching service
-		if ( fetch = CHIPPER.fetch.wget ) 
+		if ( fetch = CHIPPER.fetchers.wget ) 
 			fetch( CHIPPER.paths.images.tag("?", keys ), cb );
 		
 		else
 			Trace("Missing WMS image fetcher");
-	},
+	},*/
 	
 	aoi: null, 			//< current aoi being processed
 	limit: 1e99, 		//< max numbers of chips to pull over any aoi
 
 	make: { 
-		chip: function makeChip( parms, cb ) {
+		chip: function makeChip( fetch, parms, cb ) {
 			var chip = {
 				path: `./public/images/chips/${parms.ID}.jpg`
 			};
 
 			FS.stat(chip.path, function (err) { // check if chip in file cache
 				if (err)  // not in cache so prime it
-					if ( fetch = CHIPPER.fetch.wget )
-						fetch( CHIPPER.paths.images.tag("?", parms ), function (rtn) {
-							Log("fetch chip", parms.ID, rtn);
-							cb( rtn ? chip : null );
-						});
-				
-					else
-						cb(null);
+					fetch.wget( CHIPPER.paths.images.tag("?", parms ), function (rtn) {
+						Log("fetch chip", parms.ID, rtn);
+						cb( rtn ? chip : null );
+					});
 
 				else // in cache
 					cb(chip);
 			});
 		},
 
-		flux: function makeFlux( parms, cb) {
+		flux: function makeFlux( fetch, parms, cb) {
 			var tod = parms.tod;
 			cb( new SOLAR( tod.getJulian(), tod.getHours()/24, tod.getTimezoneOffset()/60, parms.lat, parms.lon) );
 		},
 
-		collects: function makeCollects( parms, cb) {
-
-			if ( fetch = CHIPPER.fetch.http ) 
-				fetch( CHIPPER.paths.catalog.tag("?", parms), function (cat) {
-					cb(cat);
-				});
-
-			else 
-				cb( null );
+		collects: function makeCollects( fetch, parms, cb) {
+			fetch.http( CHIPPER.paths.catalog.tag("?", parms), function (cat) {
+				cb(cat);
+			});
 		}
 	},				
 	
@@ -109,36 +99,6 @@ var CHIPPER = module.exports = {
 
 			function regulateVoxels( ring ) {
 				
-				function cache( opts, cb ) {
-					sql.first( 
-						"CACHE", 
-						"SELECT Results FROM app.cache WHERE least(?) LIMIT 1", 
-						[ opts.key ], function (rec) {
-						if (rec) 
-							try {
-								cb( JSON.parse(rec.Results) );
-							}
-							catch (err) {
-								cb( opts.default );
-							}
-						
-						else
-						if ( opts.make )
-							opts.make( opts.parms, function (res) {
-								sql.query( 
-									"INSERT INTO app.cache SET Added=now(), Results=?, ?", 
-									[ JSON.stringify(res || opts.default), opts.key ], 
-									function (err) {
-										//Log("update cache", err);
-										cb( res );
-								});
-							});
-							
-						else
-							cb( opts.default );
-					});
-				}
-								
 				var
 					makeChip = CHIPPER.make.chip,
 					makeFlux = CHIPPER.make.flux,
@@ -149,10 +109,10 @@ var CHIPPER = module.exports = {
 					"SELECT ID,Point,chipID,Ring FROM app.voxels WHERE MBRcontains(geomFromText(?), voxels.Ring) GROUP BY chipID", 
 					[ toPolygon(ring) ], function (voxel) {
 
-						cache({
+						sql.cache({
 							key: {
 								Bank: "collects", 
-								cacheID: voxel.chipID,
+								Index1: voxel.chipID,
 								t: 0
 							},
 							parms: { 
@@ -162,11 +122,11 @@ var CHIPPER = module.exports = {
 							make: makeCollects
 						}, function (collects) {
 					  
-							cache({
+							sql.cache({
 								key: {
 									Bank: "chip", 
-									x: voxel.Point.x, 
-									y: voxel.Point.y,
+									x1: voxel.Point.x, 
+									x2: voxel.Point.y,
 									t: 0
 								},
 								parms: { 
@@ -179,11 +139,11 @@ var CHIPPER = module.exports = {
 								make: makeChip
 							}, function (chip) {
 
-								cache({
+								sql.cache({
 									key: {
 										Bank: "flux", 
-										x: voxel.Point.x, 
-										y: voxel.Point.y,
+										x1: voxel.Point.x, 
+										x2: voxel.Point.y,
 										t: 0
 									},
 									parms: { 
@@ -208,7 +168,7 @@ var CHIPPER = module.exports = {
 											job.Collects = collects;
 											job.Dump = "";
 
-											Log("reg job",job);
+											//Log("reg job",job);
 
 											// test chipID if over ground truth site then start a ROC workflow
 
@@ -269,7 +229,7 @@ var CHIPPER = module.exports = {
 				}
 
 				else // fetching chips from totem catalog service
-					CHIPPER.fetchCatalog( function (cat) {
+					CHIPPER.fetchersCatalog( function (cat) {
 					});
 			}
 
@@ -596,14 +556,14 @@ var CHIPPER = module.exports = {
 		src.pipe(sink); // ingest events into db
 	},
 		
-	ingestService: function (chan, cb) {  // ingest events from service channel
+	ingestService: function (url, fetch, chan, cb) {  // ingest events from service channel
 		
 		var
 			tmin = chan.tmin,
 			tmax = chan.tmax;
 		
 		CHIPPER.thread( function (sql) {	
-			CHIPPER.fetch.events( {tmin:tmin,tmax:tmax}, function (evs) {
+			fetch( url.tag("?", {tmin:tmin,tmax:tmax}), function (evs) {
 				var 
 					n = 0,
 					str = CHIPPER.ingestStream( sql, "guest", function () {
@@ -880,31 +840,6 @@ var CHIPPER = module.exports = {
 		// [70.0899,33.9018],[70.0990,33.9105],[70.0902,33.9109], [70.0988,33.9016],
 	},
 	
-	// reserved
-	
-	collects: {  // reserved for collects as chips are requested
-	},
-	
-	regulate: function (sql, chip, det, cb) {
-		sql.insertJob( // add job to queue and provide a callback when job departs
-			Copy(chip, {  // add job and fileid keys to the chip
-				qos: det.qos,
-				client: det.client,
-				class: det.class,
-				credit: det.credit,
-				priority: det.priority,
-				name: chip.imageID,
-				notes: det.notes,
-				task: det.task,
-				fileID:  ( chip.imageID == "spoof" ) 
-								? "spoof.jpg" 
-								: chip.index + "_" + chip.imageID + ".jpg"
-			}), cb);
-	},
-		
-	streamingWindow: null,  //< event streaming connection parameters
-				// { tmin: 0,  tmax: 0 },
-	
 	config: function (opts) {  //< reconfigure the chipper
 		
 		if (opts) Copy(opts, CHIPPER);
@@ -917,277 +852,13 @@ var CHIPPER = module.exports = {
 		return CHIPPER;
 	},
 	
-	chipVOI: function (chan, det, cb) {
+	voxelize: function (ring, det) {
 		
-		function threadEngine( sql, cb ) { // start engine thread and provide engine steeper to the callback
-
-			var 
-				req = Copy( det, {  // engine context
-					group: "app",
-					table: det.name,
-					client: det.client,
-					query: chan,
-					sql: sql,
-					body: {},
-					action: "select",					
-					state: {
-						events: [],     // events inside voxel
-						scenario: {}, 	// voxel scenario
-						obs: {} 	// observations made inside voxel
-					}
-				});
-
-			//console.log(ctx);
-			ENGINE.run(req, function (ctx, step) { // start an engine thread
-				
-				if ( ctx )
-					cb( function(evs, obs) { // use this engine stepper
-						ctx.events = evs;
-						ctx.obs = obs;
-						if ( err = step() ) Trace(err);
-
-						return obs;
-					});
-
-				else
-					cb( null );
-			});
-		}
+		var aoi = CHIPPER.aoi = new AOI( ring, det.scale, det.pixels, det.size );
+		aoi.chipArea(det, function (chip,sql) {
+			cb(chip, null, sql);
+		});	
 		
-		CHIPPER.thread( function (sql) {
-
-			threadEngine( sql, function (stepEngine) {
-
-				var
-					ring = chan.voiring;
-
-				if (stepEngine)
-					sql.query( 
-						"SELECT * FROM app.voxels WHERE Enabled AND st_contains(st_GeomFromText(?), Point)"
-						.tagQuery( chan.whereVoxel ), [ toPolygon(ring) ] )
-
-					.on("result", function (voxel) {
-						//console.log({ vox: voxel.ID} );
-
-						sql.query( 
-							"SELECT * FROM app.events WHERE ?"
-							.tagQuery( chan.whereEvent ), [
-								{voxelID: voxel.ID}, 
-								chan.whereEvent
-							], 	function (err, evs) {
-								
-							//Copy( {events: events, scenario: voxel}, ctx);
-							console.log({ vox: voxel.ID, evs: evs.length} );
-							
-							if (evs.length) 
-								cb( voxel, stepEngine(evs, {}), sql);
-
-								/*ENGINE.select(req, function (rtn) {
-									console.log({ev_ring_rtn:rtn});
-									res( {evs: evs.length, scenario: voxel} );
-									if (query.Save)
-										sql.query("REPLACE INTO ?? SET ?", [ req.table, {Save: JSON.stringify(rtn)} ]);
-								});*/
-						});
-					});
-				
-				else
-					Trace("NO VOXEL ENGINE");
-
-			});
-		});
-	},
-		
-	ingestStreams: function (chan, cb) {  // start stream service
-		var 
-			tmin = new Date(chan.tmin),
-			tmax = new Date(chan.tmax),
-			tint = 400, // hours
-			tInt = tint * 3600e3, // milisecs
-			tLook = tmax - tmin, // millsecs
-			tlook = tLook / 3600e3; // hours
-
-		if ( ingestService = CHIPPER.ingestService )
-			for (var t=tnext=tmin; t<tmax; t=tnext) {
-				chan.tmin = t;
-				chan.tmax = tnext = new Date( t.getTime() + tInt);
-				ingestService(chan, cb);
-			}
-	},
-	
-	chipAOI: function (chan, det, cb) {  // start detector on new sql thread
-		
-		function threadEngine( sql, cb ) { // start engine thread and provide engine stepper to callback
-
-			var 
-				req = Copy( det, {  // engine context
-					group: "app",
-					table: det.name,
-					client: det.client,
-					query: chan,
-					body: {},
-					sql: sql,
-					action: "select",
-					state: {
-						frame: {  // input port
-							job: ""
-						},
-						detector: {   // output port
-							scale: det.step, 
-							dim: aoi.gfs,
-							delta: det.range,
-							hits: det.detects,
-							cascade: [
-								ENV.DETS + "cars/haar/ver0/cascade"
-							],
-							dets: [],
-							net: ENV.DETS + "cars/cnn/test0_lenet_"
-						}
-					}
-				}),
-				dets = req.state.detector.dets,
-				images = CHIPPER.paths.images;
-
-			for (var n=0, Ndets = 3 /*aoi.Nf*aoi.Nf*/ ; n<Ndets ; n++) // opencv engines require a tau reserve
-				dets.push( {res:0} );
-
-			//console.log({detreserve: dets.length});
-			
-			ENGINE.run(req, function (ctx, step) { // start an engine thread
-				
-				if ( ctx )
-					cb( function(chip,dets) { // use this engine stepper
-						ctx.frame.job = images + chip.fileID;
-
-						if ( err = step() ) Trace(err);
-
-						ctx.detector.dets.each = Array.prototype.each;
-						ctx.detector.dets.each( function (n,det) {
-							//console.log({det:det});
-							//if (det.job == "set") dets.push(det);
-							//dets.push(det);
-						});
-						
-						return dets;
-					});
-
-				else
-					cb( null );
-			});
-		}
-
-		function eachCollect( chan, cb ) {  // prime collection process then callback cb()
-			var 
-				collects = CHIPPER.collects,
-				fetch = CHIPPER.fetch.catalog;
-
-			chan.geometryPolygon = JSON.stringify({rings: chan.aoiring});  // ring being monitored
-			delete chan.aoiring;
-
-			console.log({collecting:chan});
-
-			fetch(chan, function (cat) {  // query catalog for desired data channel
-
-				//console.log({fetchcat: cat});
-				
-				if ( cat ) {
-					switch ( chan.source ) {  // normalize response to ess
-						case "dglobe":
-							break;
-						case "omar":
-							break;
-						case "ess":
-						default:
-					}
-
-					var
-						results = ( cat.GetRecordsResponse || {SearchResults: {}} ).SearchResults,
-						datasets = results.DatasetSummary || [];
-
-					datasets.each( function (n,collect) {  // pull image collects from each catalog entry
-						var 
-							image = collect["Image-Product"].Image,
-							sun = image["Image-Sun-Characteristic"] || {SunElevationDim: "0", SunAzimuth: "0"},
-							restrict = collect["Image-Restriction"] || {Classification: "?", ClassificationSystemId: "?", LimitedDistributionCode: ["?"]},
-							raster = image["Image-Raster-Object-Representation"],
-							region = collect["Image-Country-Coverage"] || {CountryCode: ["??"]},
-							atm = image["Image-Atmospheric-Characteristic"],
-							urls = {
-								wms: collect.WMSUrl,
-								wmts: collect.WMTSUrl,
-								jpip: collect.JPIPUrl
-							};
-
-						if (urls.wms) { // valid collects have a wms url
-							// ImageId == "12NOV16220905063EA00000 270000EA530040"
-							Trace("COLLECTED "+image.ImageId);
-
-							collects[image.ImageId] = {  // add collect to internal catalog
-								imported: new Date(image.ImportDate),
-								collected: new Date(image.QualityRating),
-								mission: image.MissionId,
-								sunEl: parseFloat(sun.SunElevationDim),
-								sunAz: parseFloat(sun.SunAzimuth),
-								layer: collect.CoverId,
-								clouds: atm.CloudCoverPercentageRate,
-								country: region.CountryCode[0],
-								classif: restrict.ClassificationCode + "//" + restrict.LimitedDistributionCode[0],
-								imageID: image.ImageId.replace(/ /g,""),
-								mode: image.SensorCode,
-								bands: parseInt(image.BandCountQuantity),
-								gsd: parseFloat(image.MeanGroundSpacingDistanceDim)*25.4e-3,
-								wms: urls.wms
-									.replace(
-										"?REQUEST=GetCapabilities&VERSION=1.3.0",
-										"?request=GetMap&version=1.1.1")
-									.tag({
-										width: aoi.lat.pixels,
-										height: aoi.lon.pixels,
-										srs: "epsg%3A4326",
-										format: "image/jpeg"
-									})
-							};
-						}
-
-						else
-							Trace(CHIPPER.errors.nowms);
-					});
-				}
-
-				cb();
-			});
-		}
-		
-		//if ( !chan.ring ) chan.ring = CHIPPER.spoof.ring;
-		
-		var aoi = CHIPPER.aoi = new AOI( chan.aoiring, det.scale, det.pixels, det.size );
-		
-		console.log({chipping_aoi: [aoi.lat.steps, aoi.lon.steps]});
-					 
-		CHIPPER.thread( function (sql) {  // start a sql thread
-			threadEngine( sql, function (stepEngine) {  // start detector engine thread
-				eachCollect( chan, function () { // for each collect on this channel
-					
-					if (stepEngine)  // detector provided
-						aoi.chipArea(det, function (chip,sql) {  // get the next chip is this aoi
-							cb(chip, stepEngine( chip, [] ), sql);  // step detector on this chip
-						});
-
-					else  // no detector provided so just chip
-						aoi.chipArea(det, function (chip,sql) {
-							cb(chip, null, sql);
-						});	
-				});
-			});
-		});
-		
-	},
-	
-	started: new Date(),
-	
-	cacheInfo: {
-		maxage: 30,
-		flush: false
 	}
 	
 };
