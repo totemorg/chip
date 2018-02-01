@@ -865,6 +865,8 @@ var CHIPPER = module.exports = {
 	
 	voxelizeAOI: function (sql, aoicase) {
 		
+		var now = new Date();
+		
 		CHIPPER.chipAOI(sql, aoicase, function (chip) {
 
 			//Log("make voxels above", chip);
@@ -876,7 +878,8 @@ var CHIPPER = module.exports = {
 					minAlt: alt,
 					maxAlt: alt+1,
 					chipID: chip.ID,
-					fileID: null
+					fileID: null,
+					added: now
 				}, chip.ring, chip.point] );
 
 				//if (!alt) Log(chip.ring);
