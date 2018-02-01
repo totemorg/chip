@@ -91,8 +91,12 @@ var CHIPPER = module.exports = {
 	chipEvents: function ( req, Job, cb ) {  //< callback cb(job) where job is event getter hash
 		
 		var 
-			sql = req.sql;
+			sql = req.sql,
+			aoi = Job.aoi || {},
+			voxelClass = (aoi.constructor == String) ? aoi : "noname";
 
+		Log("chip with voxel class", voxelClass );
+		
 		function regulateJob( Job ) {
 
 			function regulateVoxels( soi, ring ) {
@@ -105,7 +109,7 @@ var CHIPPER = module.exports = {
 				sql.each(  // pull all voxels falling over specified aoi and stack them by chipID
 					"REG", 
 					"SELECT ID,Point,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID", 
-					[ toPolygon(ring), {Name:"aoi"} ], function (voxel) {
+					[ toPolygon(ring), {Class:voxelClass} ], function (voxel) {
 
 						sql.cache({  // determine sensor collects at chip under this voxel
 							key: {
@@ -342,7 +346,7 @@ var CHIPPER = module.exports = {
 					else
 					if (aoi = Job.aoi)  // regulate events by voxel
 						if ( aoi.constructor == String )
-							sql.each( "REG", "SELECT Ring FROM app.aois WHERE ?", {Name:aoi}, function (rec) {
+							sql.each( "REG", "SELECT `ring[[lon;lat];---] degs` AS Ring FROM app.aois WHERE ?", {Name:aoi}, function (rec) {
 								try {
 									regulateVoxels( soi, JSON.parse(rec.Ring) );
 								}
@@ -362,7 +366,7 @@ var CHIPPER = module.exports = {
 		}
 
 		if ( Job.constructor == String ) 
-			sql.each( "REG", "SELECT Job FROM apps.jobs WHERE ?", {Name:Job}, function (rec) {
+			sql.each( "REG", "SELECT Job FROM app.jobs WHERE ?", {Name:Job}, function (rec) {
 				try {
 					regulateJob( JSON.parse(rec.Job) );
 				}
@@ -579,7 +583,7 @@ var CHIPPER = module.exports = {
 		noStepper: new Error("engine does not exist, is not enabled, or lost stepper")
 	},
 	
-	getImage: function (chip,det,cb) { // Load chip with pixels then callback(cb).  Auto-forecasting when needed.
+	getImage: function (chip,aoicase,cb) { // Load chip with Npixels then callback(cb).  Auto-forecasting when needed.
 		
 		function paste(img, src, left, top, cb) {
 			if ( left+src.width() > img.width() )
@@ -704,15 +708,15 @@ var CHIPPER = module.exports = {
 				cb(bgname);
 		}
 			
-		function runForecast(chip,det,cb) {
+		function runForecast(chip,aoicase,cb) {
 			if (model = CHIPPER.models.none) {  // use forecasting model
 				var 
 					aoi = chip.aoi,
-					pixels = aoi.Ns,
-					sites = pixels * pixels,
+					Npixels = aoi.chipPixels,
+					sites = Npixels * Npixels,   // Nfeatures ^ 2 ??
 					gfs = aoi.gfs,
-					name = det.name,
-					obs = det.oevents.length,
+					name = aoicase.Name,
+					obs = aoicase.oevents.length,  // max observation sites say 64 ??
 					bgname = chip.fileID,
 					emeds = 0;
 				
@@ -736,8 +740,8 @@ var CHIPPER = module.exports = {
 									src: srcs.sample(),
 									flip: flips.sample(),
 									rot: rots.sample(),
-									top: round(i / pixels),
-									left: i % pixels
+									top: round(i / Npixels),
+									left: i % Npixels
 								};
 							
 							else
@@ -773,12 +777,12 @@ var CHIPPER = module.exports = {
 					//console.log({fetchimage: rtn});
 
 					Trace("FETCH "+chip.fileID);
-					if ( !err) runForecast(chip, det, cb);
+					if ( !err) runForecast(chip, aoicase, cb);
 				});
 			
 			else { 	// in cache
 				Trace("CACHE "+chip.fileID);
-				runForecast(chip, det, cb);
+				runForecast(chip, aoicase, cb);
 			}
 		});
 		
@@ -850,25 +854,25 @@ var CHIPPER = module.exports = {
 		return CHIPPER;
 	},
 	
-	detectAOI: function (sql, det) {
+	detectAOI: function (sql, aoicase) {
 		
-		CHIPPER.chipAOI(sql, det, function (chip) {
+		CHIPPER.chipAOI(sql, aoicase, function (chip) {
 
 			Log("detecting chip", chip.bbox);
 
 		});
 	},
 	
-	voxelizeAOI: function (sql, det) {
+	voxelizeAOI: function (sql, aoicase) {
 		
-		CHIPPER.chipAOI(sql, det, function (chip) {
+		CHIPPER.chipAOI(sql, aoicase, function (chip) {
 
 			//Log("make voxels above", chip);
 
 			for (var alt = 0; alt<4; alt++)  { // define voxels above this chip
 				sql.query(
 					"INSERT INTO app.voxels SET ?, Ring=GeomFromText(?), Point=GeomFromText(?)", [{
-					Name: "aoi",
+					class: aoicase.Name,
 					minAlt: alt,
 					maxAlt: alt+1,
 					chipID: chip.ID,
@@ -882,18 +886,20 @@ var CHIPPER = module.exports = {
 		});		
 	},
 	
-	chipAOI: function (sql, det, cb) {
+	chipAOI: function (sql, aoicase, cb) {
 		var
-			ring = det.ring,
-			scale = det.scale,
-			pixels = det.pixels,
-			size = det.size,
-			aoi = new AOI( ring, scale, pixels, size );
+			ring = aoicase[ "ring[[lon;lat];---] degs" ],
+			chipFeatures = aoicase[ "chip length[features]" ],
+			chipPixels = aoicase[ "chip length[pixels]" ],
+			featureDim = aoicase[ "feature length[m]" ],
+			overlap = aoicase[ "chip overlap[features]" ],
+			chipDim = featureDim * chipFeatures,
+			aoi = new AOI( ring, chipFeatures, chipPixels, chipDim, overlap );
 
-		Log("voxelize", det);
-		//sql.beginBulk();
+		Log("voxelize", aoicase);
+		//sql.beginBulk();   // speeds up voxel inserts but chipID will be null
 		
-		aoi.chipArea(det, function (chip) {  //< enumerate chips over this aoi
+		aoi.chipArea(aoicase, function (chip) {  //< enumerate chips over this aoi
 			
 			if (chip)  // still chips in this aoi
 				sql.cache({  // get chip info or make it if not in the cache
@@ -1018,9 +1024,14 @@ POS.prototype = {
 
 /*===================================================
 AOI interface
+ ring = [ [lon,lat], .... ] degs defining entire aoi
+ chipFeatures = number of feature across chip edge
+ chipPixels = number of pixels across chip edge
+ chipDim = length of chip edge [m]
+ overlap = number of features to overlap chips
 */
 
-function AOI(ring,Nf,Ns,gfd) {
+function AOI(ring,chipFeatures,chipPixels,chipDim,overlap) {  // build an AOI over a ring to accmodate specifed chip
 
 	var 
 		cos = Math.cos,
@@ -1061,26 +1072,26 @@ function AOI(ring,Nf,Ns,gfd) {
 		BL = aoi.BL = ring[3].pos(c),
 		lat = minlat(TL,BL,TR,BR),				// initial lat [rad]
 		lon = minlon(TL,BL,TR,BR),			// initial lon [rad]
-		ol = aoi.ol = 1/Nf, 							// chip overlap
-		gcd = aoi.gcd = Nf * gfd/1000,			// chip dimension [km]
+		ol = aoi.ol = overlap/chipFeatures, 							// % chip overlap
+		featureDim = aoi.featureDim = chipDim / chipFeatures,   // feature dim [m]
+		//chipDim = aoi.chipDim = chipFeatures * featureDim/1000,			// chip dimension [km]
 		r = aoi.r = 6137, 								// earth radius [km]
-		u = aoi.u = 2*pow(sin(gcd/(2*r)),2), // angle formed
-		dlon = acos(1 - u), 							// delta lon to keep chip height = chip width = gcd
-		dlat = acos(1 - u / pow(cos(lat),2)); 	// delta lat to keep chip height = chip width = gcd
+		u = aoi.u = 2*pow(sin( (chipDim/1000) / (2*r) ),2), // angle formed
+		dlon = acos(1 - u), 							// delta lon to keep chip height = chip width = chipDim
+		dlat = acos(1 - u / pow(cos(lat),2)); 	// delta lat to keep chip height = chip width = chipDim
 
 	// note dlat -> when lat -> +/- 90 ie at the poles
 	
-	//console.log({aoi:ring,number_of_features:Nf,number_of_samples:Ns,gcd:gcd,gfd:gfd,lat:lat,lon:lon,dels: [dlat,dlon], ol:ol});	
-
-	aoi.csd = gcd *1000/Ns; 		// chip sampling dimension [m]
-	aoi.gfs = round(Ns/Nf);	// ground feature samples [pixels]
-	aoi.Ns = Ns;  // samples across chip [pixels]
-	aoi.Nf = Nf;  // features along a chip dimension
-	aoi.gfd = gfd; // ground feature dimension [m]
+	//console.log({aoi:ring,number_of_features:chipFeatures,number_of_samples:chipPixels,chipDim:chipDim,featureDim:featureDim,lat:lat,lon:lon,dels: [dlat,dlon], ol:ol});	
+	aoi.csd = chipDim / chipPixels; 		// chip sampling dimension [m]
+	aoi.gfs = round(chipPixels/chipFeatures);	// ground feature samples [pixels]
+	aoi.chipPixels = chipPixels;  // samples across chip edge [pixels]
+	aoi.chipFeatures = chipFeatures;  // features along a chip edge
+	//aoi.featureDim = featureDim; // feature edge dimension [m]
 	aoi.mode = "curvedearth";
 	
-	aoi.lat = {min:lat, max:maxlat(TL,BL,TR,BR), ol:ol, pixels: Ns, del:dlat, val:lat, gcd:gcd, idx:0};
-	aoi.lon = {min:lon, max:maxlon(TL,BL,TR,BR), ol:ol, pixels: Ns, del:dlon, val:lon, gcd:gcd, idx:0};
+	aoi.lat = {min:lat, max:maxlat(TL,BL,TR,BR), ol:ol, pixels:chipPixels, del:dlat, val:lat, dim:chipDim, idx:0};
+	aoi.lon = {min:lon, max:maxlon(TL,BL,TR,BR), ol:ol, pixels:chipPixels, del:dlon, val:lon, dim:chipDim, idx:0};
 	
 	aoi.lat.steps = floor( (aoi.lat.max - lat) / dlat );
 	aoi.lon.steps = floor( (aoi.lon.max - lon) / dlon );
@@ -1100,7 +1111,7 @@ function AOI(ring,Nf,Ns,gfd) {
 }
 
 AOI.prototype = {	
-	getChip: function (det,cb) { // callback cb(chip) with next chip in this chipping process
+	getChip: function (aoicase,cb) { // callback cb(chip) with next chip in this chipping process
 		var
 			aoi = this,
 			lat = this.lat,
@@ -1113,12 +1124,12 @@ AOI.prototype = {
 		return withinAOI;	
 	},
 
-	chipArea: function (det,cb) {  // start regulated chipping 
+	chipArea: function (aoicase,cb) {  // start regulated chipping 
 		var aoi = this;
 		
 		aoi.chips = 0;  // reset chip counter
 		
-		while ( aoi.getChip( det, cb) );
+		while ( aoi.getChip( aoicase, cb) );
 		cb( null );  // mark process done
 	}
 };
@@ -1138,11 +1149,11 @@ function CHIP(aoi) {
 	this.max = {lat: pos.lat*(1+eps.pos), lon:pos.lon*(1+eps.pos), scale:aoi.scale*(1+eps.scale)};
 	//this.index = ("000"+lat.idx).substr(-3) + "_" + ("000"+lon.idx).substr(-3);
 	//this.aoi = aoi;
-	this.gfs = aoi.gfs; //  umber of samples across a ground feature
-	this.sites = aoi.Nf * aoi.Nf;  // number of grounf features that can fit in chip aoi
+	this.gfs = aoi.gfs; //  number of samples across a feature
+	this.sites = aoi.chipFeatures * aoi.chipFeatures;  // number of features that can fit in chip
 	
-	this.height = lat.gcd;
-	this.width = lon.gcd;
+	this.height = lat.dim;  // [m]
+	this.width = lon.dim;	// [m]
 	this.rows = lat.pixels;
 	this.cols = lon.pixels;
 	this.made = new Date(); 
@@ -1201,10 +1212,10 @@ function ROC(f,obs) {
 }
 
 CHIP.prototype = {
-	forecast: function (f,det,model,obs,cb) {
+	forecast: function (f,aoicase,model,obs,cb) {
 		var chip = this;
 		
-		Trace(`FORECASTING ${det} WITH ${chip.fileID} USING ${model} AT ${f}%`);
+		Trace(`FORECASTING ${aoicase} WITH ${chip.fileID} USING ${model} AT ${f}%`);
 		
 		var fchip = Copy(chip,{});
 		
@@ -1228,10 +1239,10 @@ CHIP.prototype = {
 		cb( new ROC(f,obs) );
 	},
 
-	runForecast: function (det,cb) {
+	runForecast: function (aoicase,cb) {
 		var
 			chip = this,
-			pixels = chip.gfs, //chip.aoi.gfs,
+			Npixels = chip.gfs, //chip.aoi.gfs,  chip.Npixels ??
 			sites = chip.sites, //chip.aoi.sites,
 			tip = { width: 64, height: 64};
 
@@ -1263,7 +1274,7 @@ CHIP.prototype = {
 								fchip.job,			// name of forecasting jpi containing embedded jpgs
 								roc.Npos, 			// number of chips to embed
 								model.srcs,			// candidate sources to embed
-								model.scales.clone().scale(pixels), // candidate embed scales
+								model.scales.clone().scale(Npixels), // candidate embed scales
 								model.flips, 		// candidate embed flips
 								model.rots, 			// candidate embed rotations
 								sites, 					// candidate embed sites
