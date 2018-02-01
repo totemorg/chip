@@ -62,14 +62,12 @@ var CHIPPER = module.exports = {
 
 	make: { 
 		chip: function makeChip( fetch, parms, cb ) {
-			var chip = {
-				path: `./public/images/chips/${parms.ID}.jpg`
-			};
+			var chip = parms;
 
 			FS.stat(chip.path, function (err) { // check if chip in file cache
 				if (err)  // not in cache so prime it
 					fetch.wget( CHIPPER.paths.images.tag("?", parms ), function (rtn) {
-						Log("fetch chip", parms.ID, rtn);
+						Log("fetch chip", parms.path, rtn);
 						cb( rtn ? chip : null );
 					});
 
@@ -90,58 +88,62 @@ var CHIPPER = module.exports = {
 		}
 	},				
 	
-	chipEvents: function ( req, Job, cb ) {  // callback cb(job)
+	chipEvents: function ( req, Job, cb ) {  //< callback cb(job) where job is event getter hash
 		
 		var 
 			sql = req.sql;
 
 		function regulateJob( Job ) {
 
-			function regulateVoxels( ring ) {
+			function regulateVoxels( soi, ring ) {
 				
 				var
 					makeChip = CHIPPER.make.chip,
 					makeFlux = CHIPPER.make.flux,
 					makeCollects = CHIPPER.make.collects;
 				
-				sql.each(
+				sql.each(  // pull all voxels falling over specified aoi and stack them by chipID
 					"REG", 
-					"SELECT ID,Point,chipID,Ring FROM app.voxels WHERE MBRcontains(geomFromText(?), voxels.Ring) GROUP BY chipID", 
-					[ toPolygon(ring) ], function (voxel) {
+					"SELECT ID,Point,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID", 
+					[ toPolygon(ring), {Name:"aoi"} ], function (voxel) {
 
-						sql.cache({
+						sql.cache({  // determine sensor collects at chip under this voxel
 							key: {
-								Bank: "collects", 
+								Name1: "collects", 
 								Index1: voxel.chipID,
+								Name1: JSON.stringify(soi),
 								t: 0
 							},
-							parms: { 
+							parms: Copy(soi, { 
 								ring: ring
-							},
+							}),
 							default: [],
 							make: makeCollects
 						}, function (collects) {
 					  
 							sql.cache({
 								key: {
-									Bank: "chip", 
+									Name1: "chip", 
 									x1: voxel.Point.x, 
 									x2: voxel.Point.y,
 									t: 0
 								},
 								parms: { 
-									ID: voxel.chipID,
-									bbox: toBBox(voxel.Ring)
+									path: `./public/images/chips/${voxel.chipID}.jpeg`,
+									bbox: toBBox(voxel.Ring),
+									ring: toPolygon(voxel.Ring),
+									lat: voxel.Point.x,
+									lon: voxel.Point.y
 								},
 								default: {
-									path: collects[0].url || "./shares/spoof.jpg"
+									path: (collects[0] || {url: "./shares/spoof.jpg"}).url									
 								},
 								make: makeChip
 							}, function (chip) {
 
-								sql.cache({
+								sql.cache({  // get solar flux information at this chip
 									key: {
-										Bank: "flux", 
+										Name1: "flux", 
 										x1: voxel.Point.x, 
 										x2: voxel.Point.y,
 										t: 0
@@ -155,10 +157,10 @@ var CHIPPER = module.exports = {
 									make: makeFlux
 								}, function (flux) {
 
-									sql.each( 
+									sql.each( // get all voxels above this chip
 										"REG",
-										"SELECT * FROM app.voxels WHERE ?",
-										[ {chipID: voxel.chipID} ], function (voxel) {
+										"SELECT * FROM app.voxels WHERE least(?,1)",
+										[ {chipID: voxel.chipID, Name:"aoi"} ], function (voxel) {
 
 											where.voxelID = voxel.ID;
 
@@ -189,6 +191,7 @@ var CHIPPER = module.exports = {
 				where = Job.where || {},
 				order = Job.order || "t",
 				limit = Job.limit || 1000,
+				soi = Job.soi || {},
 				file = Job.file,
 				src = `${req.group}.events`, //"??.events LEFT JOIN ??.voxels ON events.voxelID = voxels.ID ",
 				fields = "*",
@@ -221,19 +224,12 @@ var CHIPPER = module.exports = {
 				regmsg = `REG ${job.name}@${job.qos}`;
 
 			if ( file.charAt(0) == "/" ) {  // fetch data from service
-
-				if ( file.indexOf(".")>=0 ) { // fetching events from totem plugin.case
-					job.Load = file.tag("?",Job);
-					job.Dump = "";
-					cb( job );
-				}
-
-				else // fetching chips from totem catalog service
-					CHIPPER.fetchersCatalog( function (cat) {
-					});
+				job.Load = file.tag("?",Job);
+				job.Dump = "";
+				cb( job );
 			}
 
-			else
+			/*else
 			if (Job.voi) // regulate a VOI
 				CHIPPER.chipVOI(Job, job, function (voxel,stats,sql) {
 					sqlThread( function (sql) {
@@ -260,7 +256,7 @@ var CHIPPER = module.exports = {
 					];
 
 					sql.query(
-						"INSERT INTO ??.voxels SET ?,Ring=st_GeomFromText(?)", [
+						"INSERT INTO ??.voxels SET ?,Ring=GeomFromText(?)", [
 						group, {
 							t: t,
 							minAlt: z,
@@ -278,7 +274,8 @@ var CHIPPER = module.exports = {
 
 				sql.endBulk();						
 			}
-
+			*/
+			
 			else
 			if (false)  // regulate a image chipping ring [ [lat,lon], ... ]
 				CHIPPER.chipAOI(Job, job, function (chip,dets,sql) {
@@ -286,7 +283,7 @@ var CHIPPER = module.exports = {
 
 					//Log({save:dets});
 					sql.query(
-						"REPLACE INTO ??.chips SET ?,Ring=st_GeomFromText(?),Point=st_GeomFromText(?)", [ 
+						"REPLACE INTO ??.chips SET ?,Ring=GeomFromText(?),Point=GeomFromText(?)", [ 
 							group, {
 								Thread: job.thread,
 								Save: JSON.stringify(dets),
@@ -301,7 +298,7 @@ var CHIPPER = module.exports = {
 					// reserve voxel detectors above this chip
 					for (var vox=CHIPPER.voxelSpecs,alt=vox.minAlt, del=vox.deltaAlt, max=vox.maxAlt; alt<max; alt+=del) 
 						sql.query(
-							"REPLACE INTO ??.voxels SET ?,Ring=st_GeomFromText(?),Point=st_GeomFromText(?)", [
+							"REPLACE INTO ??.voxels SET ?,Ring=GeomFromText(?),Point=GeomFromText(?)", [
 							group, {
 								Thread: job.thread,
 								Save: null,
@@ -347,14 +344,14 @@ var CHIPPER = module.exports = {
 						if ( aoi.constructor == String )
 							sql.each( "REG", "SELECT Ring FROM app.aois WHERE ?", {Name:aoi}, function (rec) {
 								try {
-									regulateVoxels( JSON.parse(rec.Ring) );
+									regulateVoxels( soi, JSON.parse(rec.Ring) );
 								}
 								catch (err) {
 								}
 							});
 
 						else
-							regulateVoxels(aoi);
+							regulateVoxels(soi, aoi);
 
 					else  { // pull all events
 						job.Load = sql.format(get.events, [where,limit,offset] );
@@ -431,7 +428,7 @@ var CHIPPER = module.exports = {
 					function cache(ev) {
 						ingested++;
 						sql.query(
-							"INSERT INTO app.evcache SET ?, Point=st_GeomFromText(?)", [{
+							"INSERT INTO app.evcache SET ?, Point=GeomFromText(?)", [{
 								x: ev.x,
 								y: ev.y,
 								z: ev.z,
@@ -477,7 +474,7 @@ var CHIPPER = module.exports = {
 
 					sql.all(
 						"INGEST",
-						"UPDATE app.files SET ?,Ring=st_GeomFromText(?) WHERE ?", [{
+						"UPDATE app.files SET ?,Ring=GeomFromText(?) WHERE ?", [{
 							States: aoi.States,
 							Steps: aoi.Steps,
 							Actors: aoi.Actors,
@@ -853,7 +850,39 @@ var CHIPPER = module.exports = {
 		return CHIPPER;
 	},
 	
-	voxelize: function (sql,det,cb) {
+	detectAOI: function (sql, det) {
+		
+		CHIPPER.chipAOI(sql, det, function (chip) {
+
+			Log("detecting chip", chip.bbox);
+
+		});
+	},
+	
+	voxelizeAOI: function (sql, det) {
+		
+		CHIPPER.chipAOI(sql, det, function (chip) {
+
+			//Log("make voxels above", chip);
+
+			for (var alt = 0; alt<4; alt++)  { // define voxels above this chip
+				sql.query(
+					"INSERT INTO app.voxels SET ?, Ring=GeomFromText(?), Point=GeomFromText(?)", [{
+					Name: "aoi",
+					minAlt: alt,
+					maxAlt: alt+1,
+					chipID: chip.ID,
+					fileID: null
+				}, chip.ring, chip.point] );
+
+				//if (!alt) Log(chip.ring);
+				//if (!alt) Log(q);
+			}
+
+		});		
+	},
+	
+	chipAOI: function (sql, det, cb) {
 		var
 			ring = det.ring,
 			scale = det.scale,
@@ -861,30 +890,32 @@ var CHIPPER = module.exports = {
 			size = det.size,
 			aoi = new AOI( ring, scale, pixels, size );
 
-		aoi.chipArea(det, function (chip,sql) {
+		Log("voxelize", det);
+		//sql.beginBulk();
+		
+		aoi.chipArea(det, function (chip) {  //< enumerate chips over this aoi
 			
-			sql.cache({
-				key: {
-					Bank: "chip", 
-					x1: chip.lat, 
-					x2: chip.lon,
-					t: 0
-				},
-				parms: { 
-					ID: voxel.chipID,
-					bbox: toBBox(voxel.Ring)
-				},
-				default: {
-					path: collects[0].url || "./shares/spoof.jpg"
-				},
-				make: null
-			}, function () {
-			};
+			if (chip)  // still chips in this aoi
+				sql.cache({  // get chip info or make it if not in the cache
+					key: {  		// key chips in the cache like this
+						Name1: "chipxx", 
+						x1: chip.pos.lat, 
+						x2: chip.pos.lon,
+						t: 0
+					},
+					parms: chip,	// parms to make is just the chip itself
+					default: null,  // discard uncached chips from this flow
+					make: function makeChip(fetch, parms, cb) {  
+						cb(parms);  // dont fetch chip as aoi only voxelizing
+					}
+				}, cb );
 			
-			cb(chip, null, sql);			
+			else { // no more chips in this aoi
+				//sql.endBulk();
+			}
+			
 		});	
 	}
-}		
 	
 };
 
@@ -1037,6 +1068,8 @@ function AOI(ring,Nf,Ns,gfd) {
 		dlon = acos(1 - u), 							// delta lon to keep chip height = chip width = gcd
 		dlat = acos(1 - u / pow(cos(lat),2)); 	// delta lat to keep chip height = chip width = gcd
 
+	// note dlat -> when lat -> +/- 90 ie at the poles
+	
 	//console.log({aoi:ring,number_of_features:Nf,number_of_samples:Ns,gcd:gcd,gfd:gfd,lat:lat,lon:lon,dels: [dlat,dlon], ol:ol});	
 
 	aoi.csd = gcd *1000/Ns; 		// chip sampling dimension [m]
@@ -1052,6 +1085,9 @@ function AOI(ring,Nf,Ns,gfd) {
 	aoi.lat.steps = floor( (aoi.lat.max - lat) / dlat );
 	aoi.lon.steps = floor( (aoi.lon.max - lon) / dlon );
 	
+	//Log(lat, dlat, 1 - u / pow(cos(lat),2) );
+	//Log(aoi.lat, dlat, aoi.lon, dlon, [TL, BL, TR, BR]);
+	
 	aoi.org = TL.copy();
 	aoi.ext = {		// chip step with no overlap
 		lat:BL.copy().sub(TL).scale(dlat),
@@ -1064,7 +1100,7 @@ function AOI(ring,Nf,Ns,gfd) {
 }
 
 AOI.prototype = {	
-	getChip: function (sql,det,cb) { // callback cb(chip) with next chip in this chipping process
+	getChip: function (det,cb) { // callback cb(chip) with next chip in this chipping process
 		var
 			aoi = this,
 			lat = this.lat,
@@ -1072,7 +1108,7 @@ AOI.prototype = {
 			withinAOI = lat.val <= lat.max;
 		
 		if ( aoi.chips++ < CHIPPER.limit )  // process if max chips not reached
-			f( new CHIP(aoi), ..., cb)
+			cb( new CHIP(aoi) );
 		
 		return withinAOI;	
 	},
@@ -1082,13 +1118,8 @@ AOI.prototype = {
 		
 		aoi.chips = 0;  // reset chip counter
 		
-		CHIPPER.thread( function(sql) {  // start a thread to deposit chipping work into a job queue
-			
-			while ( aoi.getChip( sql, det, function (sql,chip) {  // while there is a chip in this aoi
-				cb(chip,sql);
-			}) );
-			
-		});	
+		while ( aoi.getChip( det, cb) );
+		cb( null );  // mark process done
 	}
 };
 
@@ -1105,8 +1136,11 @@ function CHIP(aoi) {
 	
 	this.min = {lat: pos.lat*(1-eps.pos), lon:pos.lon*(1-eps.pos), scale:aoi.scale*(1-eps.scale)};
 	this.max = {lat: pos.lat*(1+eps.pos), lon:pos.lon*(1+eps.pos), scale:aoi.scale*(1+eps.scale)};
-	this.index = ("000"+lat.idx).substr(-3) + "_" + ("000"+lon.idx).substr(-3);
-	this.aoi = aoi;
+	//this.index = ("000"+lat.idx).substr(-3) + "_" + ("000"+lon.idx).substr(-3);
+	//this.aoi = aoi;
+	this.gfs = aoi.gfs; //  umber of samples across a ground feature
+	this.sites = aoi.Nf * aoi.Nf;  // number of grounf features that can fit in chip aoi
+	
 	this.height = lat.gcd;
 	this.width = lon.gcd;
 	this.rows = lat.pixels;
@@ -1120,16 +1154,18 @@ function CHIP(aoi) {
 		BR = this.BR = new POS(lat.val, lon.val+lon.del);
 		
 	//console.log({lat: lat,lon: lon});
+	//Log(lat);
 	
 	var 
 		TLd = TL.deg(c), // [lat,lon] rads --> [lon,lat] degs
 		BLd = BL.deg(c),
 		TRd = TR.deg(c), 
-		BRd = BR.deg(c); 
+		BRd = BR.deg(c),
+		ring = [TLd, BLd, BRd, TRd, TLd];
 		
-	this.bbox = [TLd[0], TLd[1], BRd[0], BRd[1]];   // [min lon,lat, max lon,lat]  (degs)
+	this.bbox = toBBox( ring ); // [TLd[0], TLd[1], BRd[0], BRd[1]];   // [min lon,lat, max lon,lat]  (degs)
 	this.point = toPoint(TLd);
-	this.ring = toPolygon( [TLd, BLd, BRd, TRd, TLd] );
+	this.ring = toPolygon( ring );
 
 	switch (aoi.mode) { // advance lat,lon
 		case "curvedearth":
@@ -1195,13 +1231,13 @@ CHIP.prototype = {
 	runForecast: function (det,cb) {
 		var
 			chip = this,
-			pixels = chip.aoi.gfs,
-			sites = chip.aoi.sites,
+			pixels = chip.gfs, //chip.aoi.gfs,
+			sites = chip.sites, //chip.aoi.sites,
 			tip = { width: 64, height: 64};
 
 		if (false)
 			makeJPG({
-				LAYER: chip.aoi.layerID,
+				LAYER: "", //chip.aoi.layerID,
 				OUT: ENV.TIPS + chip.cache.ID + ".jpg",
 				RETRY: chip.cache.ID+"",
 				W: tip.width,
@@ -1458,8 +1494,8 @@ function toPoint( u ) {  // [lon,lat] degs
 
 function toBBox(poly) {  // [ [lon,lat], ...] degs
 	var 
-		TL = poly[0][0],
-		BR = poly[0][3],
+		TL = poly[0],
+		BR = poly[2],
 		bbox = [TL[0], TL[1], BR[0], BR[1]];
 	
 	return bbox.join(",");
