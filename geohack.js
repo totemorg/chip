@@ -7,7 +7,7 @@
  * @requires stream
  * @requires crypt
  * @requires enum
- * @requires engine
+ * @requires atomic
  */
 var
 	ENV = process.env;  //< globals
@@ -41,9 +41,9 @@ var
 			}
 		]
 	}),
-	ENGINE = require("engine"),
+	ATOM = require("atomic"),
 	STREAM = require("stream"),
-	LWIP = ENGINE.plugins.LWIP;
+	LWIP = ATOM.plugins.LWIP;
 
 var 
 	Copy = ENUM.copy,
