@@ -1,21 +1,21 @@
 {
-  "name": "chipper",
+  "name": "geohack",
   "version": "1.0.0",
   "description": "",
-  "main": "chipper.js",
+  "main": "geohack.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ACMESDS/chipper.git"
+    "url": "git+https://github.com/ACMESDS/geohack.git"
   },
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/ACMESDS/chipper/issues"
+    "url": "https://github.com/ACMESDS/geohack/issues"
   },
-  "homepage": "https://github.com/ACMESDS/chipper#readme",
+  "homepage": "https://github.com/ACMESDS/geohack#readme",
   "dependencies": {
 	"engine": "^1.0.0",
 	"enum": "^1.0.0"

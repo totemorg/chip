@@ -1,5 +1,14 @@
 // UNCLASSIFIED
 
+/**
+ * @class HACK
+ * @requires fs
+ * @requires child_process
+ * @requires stream
+ * @requires crypt
+ * @requires enum
+ * @requires engine
+ */
 var
 	ENV = process.env;  //< globals
 
@@ -45,17 +54,7 @@ Date.prototype.getJulian = function() {
   return Math.ceil((this / 86400000) - (this.getTimezoneOffset()/1440) + 2440587.5);
 }
 
-var CHIPPER = module.exports = {
-	/*
-	//fetchers: { }, //< reserved for data fetchers
-	
-	fetchImage: function (keys, cb) {  // default image fetching service
-		if ( fetch = CHIPPER.fetchers.wget ) 
-			fetch( CHIPPER.paths.images.tag("?", keys ), cb );
-		
-		else
-			Trace("Missing WMS image fetcher");
-	},*/
+var HACK = module.exports = {
 	
 	aoi: null, 			//< current aoi being processed
 	limit: 1e99, 		//< max numbers of chips to pull over any aoi
@@ -66,7 +65,7 @@ var CHIPPER = module.exports = {
 
 			FS.stat(chip.path, function (err) { // check if chip in file cache
 				if (err)  // not in cache so prime it
-					fetch.wget( CHIPPER.paths.images.tag("?", parms ), function (rtn) {
+					fetch.wget( HACK.paths.images.tag("?", parms ), function (rtn) {
 						Log("fetch chip", parms.path, rtn);
 						cb( rtn ? chip : null );
 					});
@@ -82,7 +81,7 @@ var CHIPPER = module.exports = {
 		},
 
 		collects: function makeCollects( fetch, parms, cb) {
-			fetch.http( CHIPPER.paths.catalog.tag("?", parms), function (cat) {
+			fetch.http( HACK.paths.catalog.tag("?", parms), function (cat) {
 				cb(cat);
 			});
 		}
@@ -99,12 +98,12 @@ var CHIPPER = module.exports = {
 		
 		function regulateJob( Job ) {
 
-			function regulateVoxels( soi, ring ) {
+			function regulateVoxels( soi, ring, isDetecting, genROC ) {
 				
 				var
-					makeChip = CHIPPER.make.chip,
-					makeFlux = CHIPPER.make.flux,
-					makeCollects = CHIPPER.make.collects;
+					makeChip = HACK.make.chip,
+					makeFlux = HACK.make.flux,
+					makeCollects = HACK.make.collects;
 				
 				sql.each(  // pull all voxels falling over specified aoi and stack them by chipID
 					"REG", 
@@ -233,56 +232,10 @@ var CHIPPER = module.exports = {
 				cb( job );
 			}
 
-			/*else
-			if (Job.voi) // regulate a VOI
-				CHIPPER.chipVOI(Job, job, function (voxel,stats,sql) {
-					sqlThread( function (sql) {
-						//Log({save:stats});
-						saveResults( stats, voxel );
-					});
-				});
-
-			else
-			if (Job.divs) { // create VOI
-				var offs = Job.offs, dims = Job.dims, divs = Job.divs, t = 0;
-
-				sql.beginBulk();
-
-				for (var z=offs[2], zmax=z+dims[2], zinc=(zmax-z) / divs[2]; z<zmax; z+=zinc)
-				for (var y=offs[1], ymax=y+dims[1], yinc=(ymax-y) / divs[1]; y<ymax; y+=yinc)
-				for (var x=offs[0], xmax=x+dims[0], xinc=(xmax-x) / divs[0]; x<xmax; x+=xinc) {
-					var ring = [
-						[y,x],
-						[y+yinc,x],
-						[y+yinc,x+xinc],
-						[y,x+xinc],
-						[y,x]
-					];
-
-					sql.query(
-						"INSERT INTO ??.voxels SET ?,Ring=GeomFromText(?)", [
-						group, {
-							t: t,
-							minAlt: z,
-							maxAlt: z+zinc
-						},
-
-						'POLYGON((' + [  // [lon,lat] degs
-							ring[0].join(" "),
-							ring[1].join(" "),
-							ring[2].join(" "),
-							ring[3].join(" "),
-							ring[0].join(" ") ].join(",") +'))' 
-					]);
-				}
-
-				sql.endBulk();						
-			}
-			*/
-			
+			/*
 			else
 			if (false)  // regulate a image chipping ring [ [lat,lon], ... ]
-				CHIPPER.chipAOI(Job, job, function (chip,dets,sql) {
+				HACK.chipAOI(Job, job, function (chip,dets,sql) {
 					var updated = new Date();
 
 					//Log({save:dets});
@@ -300,7 +253,7 @@ var CHIPPER = module.exports = {
 					]);
 
 					// reserve voxel detectors above this chip
-					for (var vox=CHIPPER.voxelSpecs,alt=vox.minAlt, del=vox.deltaAlt, max=vox.maxAlt; alt<max; alt+=del) 
+					for (var vox=HACK.voxelSpecs,alt=vox.minAlt, del=vox.deltaAlt, max=vox.maxAlt; alt<max; alt+=del) 
 						sql.query(
 							"REPLACE INTO ??.voxels SET ?,Ring=GeomFromText(?),Point=GeomFromText(?)", [
 							group, {
@@ -316,8 +269,9 @@ var CHIPPER = module.exports = {
 						]);
 
 				});
-
-			else  // regulate events db
+			*/
+			
+			else  // regulate aoi
 				sql.each( regmsg,  get.files, {Name: file}, function (file) {  // regulate requested file(s)
 
 					job.File = Copy( file, {} );
@@ -344,18 +298,18 @@ var CHIPPER = module.exports = {
 						});
 
 					else
-					if (aoi = Job.aoi)  // regulate events by voxel
-						if ( aoi.constructor == String )
+					if (aoi = Job.aoi)  // regulate chips or events through voxels
+						if ( aoi.constructor == String )  // testing hypothesis
 							sql.each( "REG", "SELECT `ring[[lon;lat];---] degs` AS Ring FROM app.aois WHERE ?", {Name:aoi}, function (rec) {
 								try {
-									regulateVoxels( soi, JSON.parse(rec.Ring) );
+									regulateVoxels( soi, JSON.parse(rec.Ring), true, true );
 								}
 								catch (err) {
 								}
 							});
 
-						else
-							regulateVoxels(soi, aoi);
+						else  // not testing a hypothesis
+							regulateVoxels(soi, aoi, false, false);
 
 					else  { // pull all events
 						job.Load = sql.format(get.events, [where,limit,offset] );
@@ -466,7 +420,7 @@ var CHIPPER = module.exports = {
 			//Trace(`INGEST ${ingested} EVENTS FROM FILE${fileID}`);
 			
 			if ( ingested )
-				CHIPPER.ingestCache(sql, fileID, function (aoi) {
+				HACK.ingestCache(sql, fileID, function (aoi) {
 					cb(aoi);
 					
 					var
@@ -502,7 +456,7 @@ var CHIPPER = module.exports = {
 	
 	ingestList: function (sql, evs, fileID, cb) { // ingest events from supplied list with callback cb(aoi).
 	/**
-	@member CHIPPER
+	@member HACK
 	@private
 	@method ingestList
 	@param {String} path to file, {streaming parms}, or [ ev, ... ] to ingest
@@ -520,14 +474,14 @@ var CHIPPER = module.exports = {
 					this.push( evs[n++] || null );
 				}
 			}),
-			sink = CHIPPER.ingestSink(sql, null, fileID, cb);
+			sink = HACK.ingestSink(sql, null, fileID, cb);
 		
 		src.pipe(sink);
 	},
 	
 	ingestFile: function (sql, filePath, fileID, cb) {  // ingest events from file path with callback cb(aoi).
 	/**
-	@member CHIPPER
+	@member HACK
 	@private
 	@method ingestFile
 	@param {String} path to file, {streaming parms}, or [ ev, ... ] to ingest
@@ -552,7 +506,7 @@ var CHIPPER = module.exports = {
 		
 		var
 			src = FS.createReadStream(filePath,"utf8"),
-			sink = CHIPPER.ingestSink(sql, filter, fileID, cb);
+			sink = HACK.ingestSink(sql, filter, fileID, cb);
 
 		src.pipe(sink); // ingest events into db
 	},
@@ -563,11 +517,11 @@ var CHIPPER = module.exports = {
 			tmin = chan.tmin,
 			tmax = chan.tmax;
 		
-		CHIPPER.thread( function (sql) {	
+		HACK.thread( function (sql) {	
 			fetch( url.tag("?", {tmin:tmin,tmax:tmax}), function (evs) {
 				var 
 					n = 0,
-					str = CHIPPER.ingestStream( sql, "guest", function () {
+					str = HACK.ingestStream( sql, "guest", function () {
 						var ev = evs[n++];
 						this.push( ev ? JSON.stringify([ev.x,ev.y,ev.z,ev.n]) : null );
 					}).pipe( str );
@@ -672,7 +626,7 @@ var CHIPPER = module.exports = {
 			var drops  = 0; for (var n in draws) drops++;
 			
 			if (drops) 
-				open(ENV.CHIPPER+bgname, function (bg, args) {
+				open(ENV.HACK+bgname, function (bg, args) {
 					
 					var 
 						bgwidth = args.open.width,
@@ -696,7 +650,7 @@ var CHIPPER = module.exports = {
 
 								if (! --drops)
 										bg.exec( function (err,bgimg) {
-											bgimg.writeFile(ENV.CHIPPER+"forecast_"+fcname, "jpg", {}, function (err) {
+											bgimg.writeFile(ENV.HACK+"forecast_"+fcname, "jpg", {}, function (err) {
 												if (cb) cb(fcname);
 											});
 										});
@@ -709,7 +663,7 @@ var CHIPPER = module.exports = {
 		}
 			
 		function runForecast(chip,aoicase,cb) {
-			if (model = CHIPPER.models.none) {  // use forecasting model
+			if (model = HACK.models.none) {  // use forecasting model
 				var 
 					aoi = chip.aoi,
 					Npixels = aoi.chipPixels,
@@ -768,8 +722,8 @@ var CHIPPER = module.exports = {
 		}
 		
 		var 
-			fetchImage = CHIPPER.fetchImage,
-			impath = fetchImage.wgetout = CHIPPER.paths.images + chip.fileID;
+			fetchImage = HACK.fetchImage,
+			impath = fetchImage.wgetout = HACK.paths.images + chip.fileID;
 		
 		FS.stat(impath, function (err) { // check if chip in cache
 			if (err)  // not in cache
@@ -790,7 +744,7 @@ var CHIPPER = module.exports = {
 	
 	/*
 	tagCollect: function (chip, cb) {  // process all collects associated with requested chip with callback cb(chip) 
-		Each(CHIPPER.collects, function (n,collect) {  // tag chip with collect info
+		Each(HACK.collects, function (n,collect) {  // tag chip with collect info
 			cb( Copy(collect, chip) );
 		});
 	}, */
@@ -842,21 +796,21 @@ var CHIPPER = module.exports = {
 		// [70.0899,33.9018],[70.0990,33.9105],[70.0902,33.9109], [70.0988,33.9016],
 	},
 	
-	config: function (opts) {  //< reconfigure the chipper
+	config: function (opts) {  //< reconfigure the hackit
 		
-		if (opts) Copy(opts, CHIPPER);
+		if (opts) Copy(opts, HACK);
 		
-		if ( streamingWindow = CHIPPER.streamingWindow)
-			CHIPPER.ingestStreams(streamingWindow, function (twindow,status,sql) {
+		if ( streamingWindow = HACK.streamingWindow)
+			HACK.ingestStreams(streamingWindow, function (twindow,status,sql) {
 				console.log(twindow,status);
 			});
 
-		return CHIPPER;
+		return HACK;
 	},
 	
 	detectAOI: function (sql, aoicase) {
 		
-		CHIPPER.chipAOI(sql, aoicase, function (chip) {
+		HACK.chipAOI(sql, aoicase, function (chip) {
 
 			Log("detecting chip", chip.bbox);
 
@@ -867,7 +821,7 @@ var CHIPPER = module.exports = {
 		
 		var now = new Date();
 		
-		CHIPPER.chipAOI(sql, aoicase, function (chip) {
+		HACK.chipAOI(sql, aoicase, function (chip) {
 
 			//Log("make voxels above", chip);
 
@@ -1121,7 +1075,7 @@ AOI.prototype = {
 			lon = this.lon,
 			withinAOI = lat.val <= lat.max;
 		
-		if ( aoi.chips++ < CHIPPER.limit )  // process if max chips not reached
+		if ( aoi.chips++ < HACK.limit )  // process if max chips not reached
 			cb( new CHIP(aoi) );
 		
 		return withinAOI;	
@@ -1225,7 +1179,7 @@ CHIP.prototype = {
 		fchip.ID = "forecasts/"+f+"_"+chip.fileID;
 		
 		/*
-		if (thread = CHIPPER.thread) // save roc
+		if (thread = HACK.thread) // save roc
 			thread( function (sql) {
 				sql.query(  
 					"REPLACE INTO rocs SET ?,address=geofromtext(?)", 
@@ -1265,7 +1219,7 @@ CHIP.prototype = {
 			bchip.forecast(0, function (roc) { // always run at f=0=1-FAR-1-HR level
 				cb(bchip); // run detector against this chip
 				
-				if ( model = CHIPPER.models.debug )  {  // CHIPPER.models[bchip.cache.forecast] 
+				if ( model = HACK.models.debug )  {  // HACK.models[bchip.cache.forecast] 
 					Trace(`FORECASTING ${bchip.job} USING ${model.name}`);
 					
 					model.levels.each( function (n,f) {
@@ -1448,7 +1402,7 @@ function util(sql, runopt, input, rots, pads, flips) {
 
 if (args = process.argv)
 if (args.length >= 3)
-if (thread = CHIPPER.thread)
+if (thread = HACK.thread)
 	thread(function (sql) {
 		switch ( args[2] ) {
 			case "--util":
