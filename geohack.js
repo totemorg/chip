@@ -98,7 +98,7 @@ var HACK = module.exports = {
 		
 		function regulateJob( Job ) {
 
-			function regulateVoxels( soi, ring, isDetecting, genROC ) {
+			function regulateVoxels( voi, soi, ring, isDetecting, genROC ) {
 				
 				var
 					makeChip = HACK.make.chip,
@@ -108,7 +108,7 @@ var HACK = module.exports = {
 				sql.each(  // pull all voxels falling over specified aoi and stack them by chipID
 					"REG", 
 					"SELECT ID,Point,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID", 
-					[ toPolygon(ring), {Class:voxelClass} ], function (voxel) {
+					[ toPolygon(ring), Copy(voi||{}, {Class:voxelClass}) ], function (voxel) {
 
 						sql.cache({  // determine sensor collects at chip under this voxel
 							key: {
@@ -162,7 +162,7 @@ var HACK = module.exports = {
 
 									sql.each( // get all voxels above this chip
 										"REG",
-										"SELECT * FROM app.voxels WHERE least(?,1)",
+										"SELECT * FROM app.voxels WHERE least(?)",
 										[ {chipID: voxel.chipID, Name:"aoi"} ], function (voxel) {
 
 											where.voxelID = voxel.ID;
@@ -302,14 +302,14 @@ var HACK = module.exports = {
 						if ( aoi.constructor == String )  // testing hypothesis
 							sql.each( "REG", "SELECT `ring[[lon;lat];---] degs` AS Ring FROM app.aois WHERE ?", {Name:aoi}, function (rec) {
 								try {
-									regulateVoxels( soi, JSON.parse(rec.Ring), true, true );
+									regulateVoxels( Job.voi, soi, JSON.parse(rec.Ring), true, true );
 								}
 								catch (err) {
 								}
 							});
 
 						else  // not testing a hypothesis
-							regulateVoxels(soi, aoi, false, false);
+							regulateVoxels( Job.voi, soi, aoi, false, false );
 
 					else  { // pull all events
 						job.Load = sql.format(get.events, [where,limit,offset] );
