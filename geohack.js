@@ -105,7 +105,7 @@ var HACK = module.exports = {
 					makeFlux = HACK.make.flux,
 					makeCollects = HACK.make.collects;
 				
-				sql.each(  // pull all voxels falling over specified aoi and stack them by chipID
+				sql.getEach(  // pull all voxels falling over specified aoi and stack them by chipID
 					"REG", 
 					"SELECT ID,Point,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID", 
 					[ toPolygon(ring), Copy(voi||{}, {Class:voxelClass}) ], function (voxel) {
@@ -126,7 +126,7 @@ var HACK = module.exports = {
 					  
 							sql.cache({
 								key: {
-									Name1: "chip", 
+									Name1: "chipxx", 
 									x1: voxel.Point.x, 
 									x2: voxel.Point.y,
 									t: 0
@@ -160,7 +160,7 @@ var HACK = module.exports = {
 									make: makeFlux
 								}, function (flux) {
 
-									sql.each( // get all voxels above this chip
+									sql.getEach( // get all voxels above this chip
 										"REG",
 										"SELECT * FROM app.voxels WHERE least(?)",
 										[ {chipID: voxel.chipID, Name:"aoi"} ], function (voxel) {
@@ -272,13 +272,13 @@ var HACK = module.exports = {
 			*/
 			
 			else  // regulate aoi
-				sql.each( regmsg,  get.files, {Name: file}, function (file) {  // regulate requested file(s)
+				sql.getEach( regmsg,  get.files, {Name: file}, function (file) {  // regulate requested file(s)
 
 					job.File = Copy( file, {} );
 					where.fileID = file.ID;
 
 					if ( group )  // regulate chips 
-						sql.each( regmsg, get.chips, [ req.group, req.group, req, group ], function (chip) {  // process each chip
+						sql.getEach( regmsg, get.chips, [ req.group, req.group, req, group ], function (chip) {  // process each chip
 							var 
 								dswhere = Copy(where,{}),
 								dsargs = [req.group, req.group, dswhere, limit];
@@ -292,7 +292,7 @@ var HACK = module.exports = {
 								dsargs: dsargs
 							}), function (sql, job) {
 
-								sql.all( regmsg, job.dsevs, job.dsargs, cb );
+								sql.getAll( regmsg, job.dsevs, job.dsargs, cb );
 
 							});
 						});
@@ -300,7 +300,7 @@ var HACK = module.exports = {
 					else
 					if (aoi = Job.aoi)  // regulate chips or events through voxels
 						if ( aoi.constructor == String )  // testing hypothesis
-							sql.each( "REG", "SELECT `ring[[lon;lat];---] degs` AS Ring FROM app.aois WHERE ?", {Name:aoi}, function (rec) {
+							sql.getEach( "REG", "SELECT `ring[[lon;lat];---] degs` AS Ring FROM app.aois WHERE ?", {Name:aoi}, function (rec) {
 								try {
 									regulateVoxels( Job.voi, soi, JSON.parse(rec.Ring), true, true );
 								}
@@ -320,7 +320,7 @@ var HACK = module.exports = {
 		}
 
 		if ( Job.constructor == String ) 
-			sql.each( "REG", "SELECT Job FROM app.jobs WHERE ?", {Name:Job}, function (rec) {
+			sql.getEach( "REG", "SELECT Job FROM app.jobs WHERE ?", {Name:Job}, function (rec) {
 				try {
 					regulateJob( JSON.parse(rec.Job) );
 				}
@@ -334,19 +334,19 @@ var HACK = module.exports = {
 	
 	ingestCache: function (sql, fileID, cb) {  // ingest the evcache into the events with callback cb(aoi)
 		
-		sql.all(  // ingest evcache into events history by determining which voxel they fall within
+		sql.getAll(  // ingest evcache into events history by determining which voxel they fall within
 			"INGEST",
 			
 			"INSERT INTO app.events SELECT evcache.*,voxels.ID AS voxelID "
 			+ "FROM app.evcache "
-			+ "LEFT JOIN app.voxels ON st_contains(voxels.Ring,evcache.Point) AND "
+			+ "LEFT JOIN app.voxels ON MBRcontains(voxels.Ring,evcache.Point) AND "
 			+ "evcache.z BETWEEN voxels.minAlt AND voxels.maxAlt WHERE ? ",
 			
 			{"evcache.fileID":fileID},
 			
 			function (info) {
-
-			sql.first(
+				
+			sql.getFirst(
 				"INGEST",
 				
 				"SELECT "
@@ -366,7 +366,7 @@ var HACK = module.exports = {
 				/*
 				function (aoi) {
 				
-					sql.all(  // return ingested events 
+					sql.getAll(  // return ingested events 
 						"INGEST",
 						"SELECT * FROM app.evcache WHERE ? ORDER BY t", 
 						{fileID:fileID},
@@ -377,22 +377,30 @@ var HACK = module.exports = {
 		});
 	},
 
-	ingestSink: function (sql, filter, fileID, cb) {  // return stream to sink evcache pipe with callback cb(aoi).
+	ingestSink: function (sql, filter, fileID, cb) {  // return a stream that will sink piped events with a callback cb(aoi) when finished.
 		var 
 			ingested = 0,
 			sink = new STREAM.Writable({
 				objectMode: true,
-				write: function (buf,en,cb) {
+				write: function (rec,en,cb) {
+					
 					function cache(ev) {
+						
+						if ( !ingested )   // save first event record as reference
+							sql.query("UPDATE app.files SET ? WHERE ?", [{
+								refEv: JSON.stringify(ev)
+							}, {ID: fileID}] );
+						
 						ingested++;
 						sql.query(
 							"INSERT INTO app.evcache SET ?, Point=GeomFromText(?)", [{
-								x: ev.x,
-								y: ev.y,
-								z: ev.z,
-								t: ev.t,
-								n: ev.n,
-								u: ev.u,
+								s: ev.s, 		// time step or null
+								x: ev.x,		// lon or null
+								y: ev.y,		// lat of null
+								z: ev.z,		// alt of null
+								t: ev.t,			// tod or null
+								n: ev.n,		// ensemble id or null
+								u: ev.u,		// state of null
 								fileID: fileID
 							},
 							toPoint( [ev.x, ev.y] )
@@ -400,10 +408,10 @@ var HACK = module.exports = {
 					}
 					
 					if (filter) 
-						filter(buf, cache);
+						filter(rec, cache);
 
 					else
-						cache(buf);
+						cache(rec);
 					
 					cb(null);
 				}
@@ -421,6 +429,7 @@ var HACK = module.exports = {
 			
 			if ( ingested )
 				HACK.ingestCache(sql, fileID, function (aoi) {
+					//Log("ingest aoi", aoi);
 					cb(aoi);
 					
 					var
@@ -430,7 +439,7 @@ var HACK = module.exports = {
 						BR = [aoi.yMin, aoi.xMax], 
 						Ring = [ TL, TR, BR, BL, TL ];
 
-					sql.all(
+					sql.getAll(
 						"INGEST",
 						"UPDATE app.files SET ?,Ring=GeomFromText(?) WHERE ?", [{
 							States: aoi.States,
@@ -862,8 +871,8 @@ var HACK = module.exports = {
 				sql.cache({  // get chip info or make it if not in the cache
 					key: {  		// key chips in the cache like this
 						Name1: "chipxx", 
-						x1: chip.pos.lat, 
-						x2: chip.pos.lon,
+						x1: chip.pos.lat.toFixed(4), 
+						x2: chip.pos.lon.toFixed(4),
 						t: 0
 					},
 					parms: chip,	// parms to make is just the chip itself
@@ -1100,7 +1109,7 @@ function CHIP(aoi) {
 		lat = aoi.lat,
 		lon = aoi.lon,
 		c = aoi.c,
-		pos = this.pos = {lat: (lat.val*c).toFixed(6), lon: (lon.val*c).toFixed(6)};
+		pos = this.pos = {lat: parseFloat((lat.val*c).toFixed(4)), lon: parseFloat((lon.val*c).toFixed(4))};    // lat,lon in [degs]
 	
 	this.min = {lat: pos.lat*(1-eps.pos), lon:pos.lon*(1-eps.pos), scale:aoi.scale*(1-eps.scale)};
 	this.max = {lat: pos.lat*(1+eps.pos), lon:pos.lon*(1+eps.pos), scale:aoi.scale*(1+eps.scale)};
