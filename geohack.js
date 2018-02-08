@@ -340,7 +340,7 @@ var HACK = module.exports = {
 			"INSERT INTO app.events SELECT evcache.*,voxels.ID AS voxelID "
 			+ "FROM app.evcache "
 			+ "LEFT JOIN app.voxels ON MBRcontains(voxels.Ring,evcache.Point) AND "
-			+ "evcache.z BETWEEN voxels.minAlt AND voxels.maxAlt WHERE ? ",
+			+ "evcache.z BETWEEN voxels.minAlt AND voxels.maxAlt WHERE ? HAVING voxelID",
 			
 			{"evcache.fileID":fileID},
 			
@@ -392,73 +392,79 @@ var HACK = module.exports = {
 							}, {ID: fileID}] );
 						
 						ingested++;
+						//Log(ingested,ev);
+						
 						sql.query(
 							"INSERT INTO app.evcache SET ?, Point=GeomFromText(?)", [{
-								s: ev.s, 		// time step or null
-								x: ev.x,		// lon or null
-								y: ev.y,		// lat of null
-								z: ev.z,		// alt of null
-								t: ev.t,			// tod or null
-								n: ev.n,		// ensemble id or null
-								u: ev.u,		// state of null
+								s: ev.s || 0, 		// time step 
+								x: ev.x || 0,		// lon [degs]
+								y: ev.y || 0,		// lat [degs]
+								z: ev.z || 0,		// alt [m]
+								t: ev.t || 0,		// tod 
+								n: ev.n || 0,		// ensemble id 
+								u: ev.u || 0,		// state 
 								fileID: fileID
 							},
-							toPoint( [ev.x, ev.y] )
-						]);
+							toPoint( [ev.x || 0, ev.y || 0] )
+						] );
 					}
 					
-					if (filter) 
+					if (filter)   // filter the record if filter provided
 						filter(rec, cache);
 
-					else
+					else  // no filter so just cache the record
 						cache(rec);
 					
-					cb(null);
+					cb(null);  // signal no errors
 				}
 			});
 		
 		sql.beginBulk();
 		
-		sql.query("DELETE FROM app.evcache WHERE ?",{fileID: fileID});
-		sql.query("DELETE FROM app.events WHERE ?",{fileID: fileID});
+		sql.query("DELETE FROM app.evcache WHERE ?", {fileID: fileID});
+		sql.query("DELETE FROM app.events WHERE ?", {fileID: fileID});
 		
-		sink.on("finish", function () {
-			sql.endBulk();
-			
-			//Trace(`INGEST ${ingested} EVENTS FROM FILE${fileID}`);
-			
-			if ( ingested )
-				HACK.ingestCache(sql, fileID, function (aoi) {
-					//Log("ingest aoi", aoi);
-					cb(aoi);
-					
-					var
-						TL = [aoi.yMax, aoi.xMin],   // [lon,lat] degs
-						TR = [aoi.yMax, aoi.xMax],
-						BL = [aoi.yMin, aoi.xMin],
-						BR = [aoi.yMin, aoi.xMax], 
-						Ring = [ TL, TR, BR, BL, TL ];
+		sink
+			.on("finish", function () {
+				sql.endBulk();
 
-					sql.getAll(
-						"INGEST",
-						"UPDATE app.files SET ?,Ring=GeomFromText(?) WHERE ?", [{
-							States: aoi.States,
-							Steps: aoi.Steps,
-							Actors: aoi.Actors,
-							Samples: aoi.Samples,
-							Voxelized: aoi.Voxelized,
-							coherence_time: aoi.coherence_time,
-							coherence_intervals: aoi.coherence_intervals,
-							mean_jump_rate: aoi.mean_jump_rate,
-							degeneracy: aoi.degeneracy,
-							snr: aoi.snr
-						},
-						toPolygon( Ring ), 
-						{ID: fileID} 
-					]);
-					
-				});
-		});
+				//Trace(`INGEST ${ingested} EVENTS FROM FILE${fileID}`);
+
+				if ( ingested )
+					HACK.ingestCache(sql, fileID, function (aoi) {
+						//Log("ingest aoi", aoi);
+						cb(aoi);
+
+						var
+							TL = [aoi.yMax, aoi.xMin],   // [lon,lat] degs
+							TR = [aoi.yMax, aoi.xMax],
+							BL = [aoi.yMin, aoi.xMin],
+							BR = [aoi.yMin, aoi.xMax], 
+							Ring = [ TL, TR, BR, BL, TL ];
+
+						sql.getAll(
+							"INGEST",
+							"UPDATE app.files SET ?,Ring=GeomFromText(?) WHERE ?", [{
+								States: aoi.States,
+								Steps: aoi.Steps,
+								Actors: aoi.Actors,
+								Samples: aoi.Samples,
+								Voxelized: aoi.Voxelized,
+								coherence_time: aoi.coherence_time,
+								coherence_intervals: aoi.coherence_intervals,
+								mean_jump_rate: aoi.mean_jump_rate,
+								degeneracy: aoi.degeneracy,
+								snr: aoi.snr
+							},
+							toPolygon( Ring ), 
+							{ID: fileID} 
+						]);
+
+					});
+			})
+			.on("error", function (err) {
+				sql.endBulk();
+			});
 		
 		return sink;
 	},
@@ -477,15 +483,15 @@ var HACK = module.exports = {
 		
 		var 
 			n = 0, N = evs.length,
-			src = new STREAM.Readable({
+			src = new STREAM.Readable({  // source stream for event ingest
 				objectMode: true,
-				read: function () {
+				read: function () {  // return null if there are no more events
 					this.push( evs[n++] || null );
 				}
 			}),
 			sink = HACK.ingestSink(sql, null, fileID, cb);
 		
-		src.pipe(sink);
+		src.pipe(sink);  // start the ingest
 	},
 	
 	ingestFile: function (sql, filePath, fileID, cb) {  // ingest events from file path with callback cb(aoi).
@@ -498,12 +504,27 @@ var HACK = module.exports = {
 	@param {Function} cb Response callback( ingested aoi, cb (table,id) to return info )
 	Ingest events and autorun ingestable plugins if enabled.
 	*/
-		//Trace(`INGEST FILE ${filePath}`);
 		function filter(buf, cb) {
 			buf.split("\n").each( function (n,rec) {
 				if (rec) 
 					try {
-						cb( JSON.parse(rec) );
+						var data = JSON.parse(rec);
+						
+						if ( data )
+							switch (data.constructor) {
+								case Array: 
+									data.each( function (n,rec) {
+										cb(rec);
+									});
+									break;
+									
+								case Object:
+									cb( data );
+									break;
+									
+								default: 
+									cb( {t: data} );
+							}
 					}
 					
 					catch (err) {
