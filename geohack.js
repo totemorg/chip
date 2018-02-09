@@ -377,7 +377,7 @@ var HACK = module.exports = {
 		});
 	},
 
-	ingestSink: function (sql, filter, fileID, cb) {  // return a stream that will sink piped events with a callback cb(aoi) when finished.
+	ingestSink: function (sql, filter, fileID, cb) {  // return a sinking stream for piped events with callback cb(aoi) when finished.
 		var 
 			ingested = 0,
 			sink = new STREAM.Writable({
@@ -430,7 +430,7 @@ var HACK = module.exports = {
 
 				//Trace(`INGEST ${ingested} EVENTS FROM FILE${fileID}`);
 
-				if ( ingested )
+				if ( ingested )  // callback if there were ingested events
 					HACK.ingestCache(sql, fileID, function (aoi) {
 						//Log("ingest aoi", aoi);
 						cb(aoi);
@@ -442,25 +442,27 @@ var HACK = module.exports = {
 							BR = [aoi.yMin, aoi.xMax], 
 							Ring = [ TL, TR, BR, BL, TL ];
 
-						sql.getAll(
+						sql.getAll(  // update file with aoi info
 							"INGEST",
-							"UPDATE app.files SET ?,Ring=GeomFromText(?) WHERE ?", [{
+							"UPDATE app.files SET ?, Ring=GeomFromText(?) WHERE ?", [{ 
 								States: aoi.States,
 								Steps: aoi.Steps,
 								Actors: aoi.Actors,
 								Samples: aoi.Samples,
 								Voxelized: aoi.Voxelized,
-								coherence_time: aoi.coherence_time,
-								coherence_intervals: aoi.coherence_intervals,
-								mean_jump_rate: aoi.mean_jump_rate,
-								degeneracy: aoi.degeneracy,
-								snr: aoi.snr
+								Graded: false
+								//coherence_time: aoi.coherence_time,
+								//coherence_intervals: aoi.coherence_intervals,
+								//mean_jump_rate: aoi.mean_jump_rate,
+								//degeneracy: aoi.degeneracy,
+								//snr: aoi.snr
 							},
 							toPolygon( Ring ), 
 							{ID: fileID} 
 						]);
 
 					});
+			
 			})
 			.on("error", function (err) {
 				sql.endBulk();
@@ -875,11 +877,11 @@ var HACK = module.exports = {
 	
 	chipAOI: function (sql, aoicase, cb) {
 		var
-			ring = aoicase[ "ring[[lon;lat];---] degs" ],
-			chipFeatures = aoicase[ "chip length[features]" ],
-			chipPixels = aoicase[ "chip length[pixels]" ],
-			featureDim = aoicase[ "feature length[m]" ],
-			overlap = aoicase[ "chip overlap[features]" ],
+			ring = aoicase.ring, //[ "ring[[lon;lat];---] degs" ],
+			chipFeatures = aoicase.chipLength, //[ "chip length[features]" ],
+			chipPixels = aoicase.chipSamples, //[ "chip length[pixels]" ],
+			featureDim = aoicase.featureLength, //[ "feature length[m]" ],
+			overlap = aoicase.chipOverlap, //[ "chip overlap[features]" ],
 			chipDim = featureDim * chipFeatures,
 			aoi = new AOI( ring, chipFeatures, chipPixels, chipDim, overlap );
 
