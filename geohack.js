@@ -865,7 +865,8 @@ var HACK = module.exports = {
 					maxAlt: alt+1,
 					chipID: chip.ID,
 					fileID: null,
-					added: now
+					added: now,
+					minSNR: 0
 				}, chip.ring, chip.point] );
 
 				//if (!alt) Log(chip.ring);
