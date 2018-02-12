@@ -450,7 +450,8 @@ var HACK = module.exports = {
 								Actors: aoi.Actors,
 								Samples: aoi.Samples,
 								Voxelized: aoi.Voxelized,
-								Graded: false
+								Graded: false,
+								Ingested: ingested
 								//coherence_time: aoi.coherence_time,
 								//coherence_intervals: aoi.coherence_intervals,
 								//mean_jump_rate: aoi.mean_jump_rate,
@@ -879,10 +880,10 @@ var HACK = module.exports = {
 	chipAOI: function (sql, aoicase, cb) {
 		var
 			ring = aoicase.ring, //[ "ring[[lon;lat];---] degs" ],
-			chipFeatures = aoicase.chipLength, //[ "chip length[features]" ],
-			chipPixels = aoicase.chipSamples, //[ "chip length[pixels]" ],
+			chipFeatures = aoicase.chipFeatures, //[ "chip length[features]" ],
+			chipPixels = aoicase.chipPixels, //[ "chip length[pixels]" ],
 			featureDim = aoicase.featureLength, //[ "feature length[m]" ],
-			overlap = aoicase.chipOverlap, //[ "chip overlap[features]" ],
+			overlap = aoicase.featureOverlap, //[ "chip overlap[features]" ],
 			chipDim = featureDim * chipFeatures,
 			aoi = new AOI( ring, chipFeatures, chipPixels, chipDim, overlap );
 
