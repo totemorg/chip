@@ -450,8 +450,7 @@ var HACK = module.exports = {
 								Actors: aoi.Actors,
 								Samples: aoi.Samples,
 								Voxelized: aoi.Voxelized,
-								Graded: false,
-								Ingested: ingested
+								Graded: false
 								//coherence_time: aoi.coherence_time,
 								//coherence_intervals: aoi.coherence_intervals,
 								//mean_jump_rate: aoi.mean_jump_rate,
