@@ -450,12 +450,8 @@ var HACK = module.exports = {
 								Actors: aoi.Actors,
 								Samples: aoi.Samples,
 								Voxelized: aoi.Voxelized,
-								Graded: false
-								//coherence_time: aoi.coherence_time,
-								//coherence_intervals: aoi.coherence_intervals,
-								//mean_jump_rate: aoi.mean_jump_rate,
-								//degeneracy: aoi.degeneracy,
-								//snr: aoi.snr
+								Graded: false,
+								Pruned: false
 							},
 							toPolygon( Ring ), 
 							{ID: fileID} 
