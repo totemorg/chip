@@ -98,97 +98,140 @@ var HACK = module.exports = {
 		
 		function regulateJob( Job ) {
 
-			function regulateVoxels( voi, soi, ring, isDetecting, genROC ) {
+			function regulateFile( file ) {
 				
-				var
-					makeChip = HACK.make.chip,
-					makeFlux = HACK.make.flux,
-					makeCollects = HACK.make.collects;
+				function regulateVoxels( voi, soi, ring, isDetecting, genROC ) {
 				
-				sql.getEach(  // pull all voxels falling over specified aoi and stack them by chipID
-					"REG", 
-					"SELECT ID,Point,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID", 
-					[ toPolygon(ring), Copy(voi||{}, {Class:voxelClass}) ], function (voxel) {
+					var
+						makeChip = HACK.make.chip,
+						makeFlux = HACK.make.flux,
+						makeCollects = HACK.make.collects;
 
-						sql.cache({  // determine sensor collects at chip under this voxel
-							key: {
-								Name1: "collects", 
-								Index1: voxel.chipID,
-								Name1: JSON.stringify(soi),
-								t: 0
-							},
-							parms: Copy(soi, { 
-								ring: ring
-							}),
-							default: [],
-							make: makeCollects
-						}, function (collects) {
-					  
-							sql.cache({
+					sql.getEach(  // pull all voxels falling over specified aoi and stack them by chipID
+						"REG", 
+						"SELECT ID,Point,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID", 
+						[ toPolygon(ring), Copy(voi||{}, {Class:voxelClass}) ], function (voxel) {
+
+							sql.cache({  // determine sensor collects at chip under this voxel
 								key: {
-									Name1: "chipxx", 
-									x1: voxel.Point.x, 
-									x2: voxel.Point.y,
+									Name1: "collects", 
+									Index1: voxel.chipID,
+									Name1: JSON.stringify(soi),
 									t: 0
 								},
-								parms: { 
-									path: `./public/images/chips/${voxel.chipID}.jpeg`,
-									bbox: toBBox(voxel.Ring),
-									ring: toPolygon(voxel.Ring),
-									lat: voxel.Point.x,
-									lon: voxel.Point.y
-								},
-								default: {
-									path: (collects[0] || {url: "./shares/spoof.jpg"}).url									
-								},
-								make: makeChip
-							}, function (chip) {
+								parms: Copy(soi, { 
+									ring: ring
+								}),
+								default: [],
+								make: makeCollects
+							}, function (collects) {
 
-								sql.cache({  // get solar flux information at this chip
+								sql.cache({
 									key: {
-										Name1: "flux", 
+										Name1: "chipxx", 
 										x1: voxel.Point.x, 
 										x2: voxel.Point.y,
 										t: 0
 									},
 									parms: { 
+										path: `./public/images/chips/${voxel.chipID}.jpeg`,
+										bbox: toBBox(voxel.Ring),
+										ring: toPolygon(voxel.Ring),
 										lat: voxel.Point.x,
-										lon: voxel.Point.y,
-										tod: new Date()
+										lon: voxel.Point.y
 									},
-									default: null,
-									make: makeFlux
-								}, function (flux) {
+									default: {
+										path: (collects[0] || {url: "./shares/spoof.jpg"}).url									
+									},
+									make: makeChip
+								}, function (chip) {
 
-									sql.getEach( // get all voxels above this chip
-										"REG",
-										"SELECT * FROM app.voxels WHERE least(?)",
-										[ {chipID: voxel.chipID, Name:"aoi"} ], function (voxel) {
+									sql.cache({  // get solar flux information at this chip
+										key: {
+											Name1: "flux", 
+											x1: voxel.Point.x, 
+											x2: voxel.Point.y,
+											t: 0
+										},
+										parms: { 
+											lat: voxel.Point.x,
+											lon: voxel.Point.y,
+											tod: new Date()
+										},
+										default: null,
+										make: makeFlux
+									}, function (flux) {
 
-											where.voxelID = voxel.ID;
+										sql.getEach( // get all voxels above this chip
+											"REG",
+											"SELECT * FROM app.voxels WHERE least(?)",
+											[ {chipID: voxel.chipID, Name:"aoi"} ], function (voxel) {
 
-											job.Voxel = Copy( voxel, {} );
-											job.Load = sql.format(get.events, [where,limit,offset] );
-											job.Flux = flux;
-											job.Collects = collects;
-											job.Dump = "";
+												where.voxelID = voxel.ID;
 
-											//Log("reg job",job);
+												job.Voxel = Copy( voxel, {} );
+												job.Load = sql.format(get.events, [where,limit,offset] );
+												job.Flux = flux;
+												job.Collects = collects;
+												job.Dump = "";
 
-											// test chipID if over ground truth site then start a ROC workflow
+												//Log("reg job",job);
 
-											sql.insertJob( Copy(job,{}), function (sql, job) {  // put job into the job queue
-												cb( job );
-											});
-										});	
+												// test chipID if over ground truth site then start a ROC workflow
 
+												sql.insertJob( Copy(job,{}), function (sql, job) {  // put job into the job queue
+													cb( job );
+												});
+											});	
+
+									});
 								});
-							});
-					});
-					
-				});
-			}
+						});
 
+					});
+				}
+				
+				if ( group )  // regulate chips 
+					sql.getEach( regmsg, get.chips, [ req.group, req.group, req, group ], function (chip) {  // process each chip
+						var 
+							dswhere = Copy(where,{}),
+							dsargs = [req.group, req.group, dswhere, limit];
+
+						Each(chip, function (key,val) {
+							dswhere[key] = val;
+						});
+
+						sql.insertJob( Copy(job, {  // put job into the job queue
+							dsevs: getEvents,
+							dsargs: dsargs
+						}), function (sql, job) {
+
+							sql.getAll( regmsg, job.dsevs, job.dsargs, cb );
+
+						});
+					});
+
+				else
+				if (aoi = Job.aoi)  // regulate chips or events through voxels
+					if ( aoi.constructor == String )  // testing hypothesis
+						sql.getEach( "REG", "SELECT Ring FROM app.aois WHERE ?", {Name:aoi}, function (rec) {
+							try {
+								regulateVoxels( Job.voi, soi, JSON.parse(rec.Ring), true, true );
+							}
+							catch (err) {
+							}
+						});
+
+					else  // not testing a hypothesis
+						regulateVoxels( Job.voi, soi, aoi, false, false );
+
+				else  { // pull all events
+					job.Load = sql.format(get.events, [where,limit,offset] );
+					job.Dump = "";
+					cb(job);
+				}					
+			}
+			
 			var 
 				group = Job.group,
 				where = Job.where || {},
@@ -277,45 +320,16 @@ var HACK = module.exports = {
 					job.File = Copy( file, {} );
 					where.fileID = file.ID;
 
-					if ( group )  // regulate chips 
-						sql.getEach( regmsg, get.chips, [ req.group, req.group, req, group ], function (chip) {  // process each chip
-							var 
-								dswhere = Copy(where,{}),
-								dsargs = [req.group, req.group, dswhere, limit];
-
-							Each(chip, function (key,val) {
-								dswhere[key] = val;
-							});
-
-							sql.insertJob( Copy(job, {  // put job into the job queue
-								dsevs: getEvents,
-								dsargs: dsargs
-							}), function (sql, job) {
-
-								sql.getAll( regmsg, job.dsevs, job.dsargs, cb );
-
-							});
+					if (file.Archived) 
+						CP.exec("", function () {
+							Trace("RESTORING "+file.Name);
+							sql.query("UPDATE app.files SET Archived=false WHERE ?", {ID: file.ID});
+							regulateFile(file);
 						});
-
+						
 					else
-					if (aoi = Job.aoi)  // regulate chips or events through voxels
-						if ( aoi.constructor == String )  // testing hypothesis
-							sql.getEach( "REG", "SELECT `ring[[lon;lat];---] degs` AS Ring FROM app.aois WHERE ?", {Name:aoi}, function (rec) {
-								try {
-									regulateVoxels( Job.voi, soi, JSON.parse(rec.Ring), true, true );
-								}
-								catch (err) {
-								}
-							});
-
-						else  // not testing a hypothesis
-							regulateVoxels( Job.voi, soi, aoi, false, false );
-
-					else  { // pull all events
-						job.Load = sql.format(get.events, [where,limit,offset] );
-						job.Dump = "";
-						cb(job);
-					}					
+						regulateFile(file);
+						
 				});
 		}
 
@@ -358,7 +372,7 @@ var HACK = module.exports = {
 				+ "max(t)+1 AS Steps, "
 				+ "max(u)+1 AS States, "
 				+ "max(n)+1 AS Actors, "
-				+ "count(id) AS Samples "
+				+ "count(id) AS Sampled "
 				+ "FROM app.evcache WHERE ?", 
 				
 				[ info.affectedRows, {fileID:fileID} ],	cb);
@@ -448,10 +462,12 @@ var HACK = module.exports = {
 								States: aoi.States,
 								Steps: aoi.Steps,
 								Actors: aoi.Actors,
-								Samples: aoi.Samples,
+								Sampled: aoi.Sampled,
 								Voxelized: aoi.Voxelized,
+								Rejected: aoi.Rejected,
 								Graded: false,
-								Pruned: false
+								Pruned: false,
+								Archived: false
 							},
 							toPolygon( Ring ), 
 							{ID: fileID} 
