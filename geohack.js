@@ -107,7 +107,7 @@ var HACK = module.exports = {
 						makeFlux = HACK.make.flux,
 						makeCollects = HACK.make.collects;
 
-					sql.getEach(  // pull all voxels falling over specified aoi and stack them by chipID
+					sql.forEach(  // pull all voxels falling over specified aoi and stack them by chipID
 						"REG", 
 						"SELECT ID,Point,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID", 
 						[ toPolygon(ring), Copy(voi||{}, {Class:voxelClass}) ], function (voxel) {
@@ -128,7 +128,7 @@ var HACK = module.exports = {
 
 								sql.cache({
 									key: {
-										Name1: "chipxx", 
+										Name1: "chip", 
 										x1: voxel.Point.x, 
 										x2: voxel.Point.y,
 										t: 0
@@ -162,7 +162,7 @@ var HACK = module.exports = {
 										make: makeFlux
 									}, function (flux) {
 
-										sql.getEach( // get all voxels above this chip
+										sql.forEach( // get all voxels above this chip
 											"REG",
 											"SELECT * FROM app.voxels WHERE least(?)",
 											[ {chipID: voxel.chipID, Name:"aoi"} ], function (voxel) {
@@ -192,7 +192,7 @@ var HACK = module.exports = {
 				}
 				
 				if ( group )  // regulate chips 
-					sql.getEach( regmsg, get.chips, [ req.group, req.group, req, group ], function (chip) {  // process each chip
+					sql.forEach( regmsg, get.chips, [ req.group, req.group, req, group ], function (chip) {  // process each chip
 						var 
 							dswhere = Copy(where,{}),
 							dsargs = [req.group, req.group, dswhere, limit];
@@ -206,7 +206,7 @@ var HACK = module.exports = {
 							dsargs: dsargs
 						}), function (sql, job) {
 
-							sql.getAll( regmsg, job.dsevs, job.dsargs, cb );
+							sql.forAll( regmsg, job.dsevs, job.dsargs, cb );
 
 						});
 					});
@@ -214,7 +214,7 @@ var HACK = module.exports = {
 				else
 				if (aoi = Job.aoi)  // regulate chips or events through voxels
 					if ( aoi.constructor == String )  // testing hypothesis
-						sql.getEach( "REG", "SELECT Ring FROM app.aois WHERE ?", {Name:aoi}, function (rec) {
+						sql.forEach( "REG", "SELECT Ring FROM app.aois WHERE ?", {Name:aoi}, function (rec) {
 							try {
 								regulateVoxels( Job.voi, soi, JSON.parse(rec.Ring), true, true );
 							}
@@ -315,7 +315,7 @@ var HACK = module.exports = {
 			*/
 			
 			else  // regulate aoi
-				sql.getEach( regmsg,  get.files, {Name: file}, function (file) {  // regulate requested file(s)
+				sql.forEach( regmsg,  get.files, {Name: file}, function (file) {  // regulate requested file(s)
 
 					job.File = Copy( file, {} );
 					where.fileID = file.ID;
@@ -334,7 +334,7 @@ var HACK = module.exports = {
 		}
 
 		if ( Job.constructor == String ) 
-			sql.getEach( "REG", "SELECT Job FROM app.jobs WHERE ?", {Name:Job}, function (rec) {
+			sql.forEach( "REG", "SELECT Job FROM app.jobs WHERE ?", {Name:Job}, function (rec) {
 				try {
 					regulateJob( JSON.parse(rec.Job) );
 				}
@@ -348,7 +348,7 @@ var HACK = module.exports = {
 	
 	ingestCache: function (sql, fileID, cb) {  // ingest the evcache into the events with callback cb(aoi)
 		
-		sql.getAll(  // ingest evcache into events history by determining which voxel they fall within
+		sql.forAll(  // ingest evcache into events history by determining which voxel they fall within
 			"INGEST",
 			
 			"INSERT INTO app.events SELECT evcache.*,voxels.ID AS voxelID "
@@ -360,7 +360,7 @@ var HACK = module.exports = {
 			
 			function (info) {
 				
-			sql.getFirst(
+			sql.forFirst(
 				"INGEST",
 				
 				"SELECT "
@@ -380,7 +380,7 @@ var HACK = module.exports = {
 				/*
 				function (aoi) {
 				
-					sql.getAll(  // return ingested events 
+					sql.forAll(  // return ingested events 
 						"INGEST",
 						"SELECT * FROM app.evcache WHERE ? ORDER BY t", 
 						{fileID:fileID},
@@ -456,7 +456,7 @@ var HACK = module.exports = {
 							BR = [aoi.yMin, aoi.xMax], 
 							Ring = [ TL, TR, BR, BL, TL ];
 
-						sql.getAll(  // update file with aoi info
+						sql.forAll(  // update file with aoi info
 							"INGEST",
 							"UPDATE app.files SET ?, Ring=GeomFromText(?) WHERE ?", [{ 
 								States: aoi.States,
@@ -876,7 +876,6 @@ var HACK = module.exports = {
 					minAlt: alt,
 					maxAlt: alt+1,
 					chipID: chip.ID,
-					fileID: null,
 					added: now,
 					minSNR: 0
 				}, chip.ring, chip.point] );
@@ -890,13 +889,14 @@ var HACK = module.exports = {
 	
 	chipAOI: function (sql, aoicase, cb) {
 		var
-			ring = aoicase.ring, //[ "ring[[lon;lat];---] degs" ],
-			chipFeatures = aoicase.chipFeatures, //[ "chip length[features]" ],
-			chipPixels = aoicase.chipPixels, //[ "chip length[pixels]" ],
-			featureDim = aoicase.featureLength, //[ "feature length[m]" ],
-			overlap = aoicase.featureOverlap, //[ "chip overlap[features]" ],
-			chipDim = featureDim * chipFeatures,
-			aoi = new AOI( ring, chipFeatures, chipPixels, chipDim, overlap );
+			ring = aoicase.ring, // [[lon, lat], ...] degs
+			chipFeatures = aoicase.chipFeatures, // [ features along edge ]
+			chipPixels = aoicase.chipPixels, // [pixels]
+			featureDim = aoicase.featureLength, // [m]
+			overlap = aoicase.featureOverlap, // [features]
+			chipDim = featureDim * chipFeatures,  // [m]
+			earthRadius = aoicase.radius,  // [km]  6147=earth 0=flat
+			aoi = new AOI( ring, chipFeatures, chipPixels, chipDim, overlap, earthRadius);
 
 		Log("voxelize", aoicase);
 		//sql.beginBulk();   // speeds up voxel inserts but chipID will be null
@@ -906,7 +906,7 @@ var HACK = module.exports = {
 			if (chip)  // still chips in this aoi
 				sql.cache({  // get chip info or make it if not in the cache
 					key: {  		// key chips in the cache like this
-						Name1: "chipxx", 
+						Name1: "chip", 
 						x1: chip.pos.lat.toFixed(4), 
 						x2: chip.pos.lon.toFixed(4),
 						t: 0
@@ -1031,9 +1031,10 @@ AOI interface
  chipPixels = number of pixels across chip edge
  chipDim = length of chip edge [m]
  overlap = number of features to overlap chips
+ r = surface radius [km]  6147=earth 0=flat
 */
 
-function AOI(ring,chipFeatures,chipPixels,chipDim,overlap) {  // build an AOI over a ring to accmodate specifed chip
+function AOI( ring,chipFeatures,chipPixels,chipDim,overlap,r ) {  // build an AOI over a ring to accmodate specifed chip
 
 	var 
 		cos = Math.cos,
@@ -1045,7 +1046,7 @@ function AOI(ring,chipFeatures,chipPixels,chipDim,overlap) {  // build an AOI ov
 		round = Math.round,
 		floor = Math.floor,
 		min = Math.min,
-		max = Math.max;
+		max = Math.max,
 		sqrt = Math.sqrt;
 
 	/*
@@ -1075,22 +1076,37 @@ function AOI(ring,chipFeatures,chipPixels,chipDim,overlap) {  // build an AOI ov
 		lat = minlat(TL,BL,TR,BR),				// initial lat [rad]
 		lon = minlon(TL,BL,TR,BR),			// initial lon [rad]
 		ol = aoi.ol = overlap/chipFeatures, 							// % chip overlap
-		featureDim = aoi.featureDim = chipDim / chipFeatures,   // feature dim [m]
-		//chipDim = aoi.chipDim = chipFeatures * featureDim/1000,			// chip dimension [km]
-		r = aoi.r = 6137, 								// earth radius [km]
-		u = aoi.u = 2*pow(sin( (chipDim/1000) / (2*r) ),2), // angle formed
-		dlon = acos(1 - u), 							// delta lon to keep chip height = chip width = chipDim
-		dlat = acos(1 - u / pow(cos(lat),2)); 	// delta lat to keep chip height = chip width = chipDim
-
-	// note dlat -> when lat -> +/- 90 ie at the poles
+		//r = aoi.r = 6137, 								// earth radius [km]
+		featureDim = aoi.featureDim = chipDim / chipFeatures;   // feature dim [m]
 	
-	//console.log({aoi:ring,number_of_features:chipFeatures,number_of_samples:chipPixels,chipDim:chipDim,featureDim:featureDim,lat:lat,lon:lon,dels: [dlat,dlon], ol:ol});	
+	if (r)  // curved earth
+		var
+			//chipDim = aoi.chipDim = chipFeatures * featureDim/1000,			// chip dimension [km]
+			du = aoi.du = 2*pow(sin( (chipDim/1000) / (2*r) ),2), // angle formed
+			dlon = acos(1 - du), 							// delta lon to keep chip height = chip width = chipDim
+			dlat = acos(1 - du / pow(cos(lat),2)); 	// delta lat to keep chip height = chip width = chipDim
+	
+	else  // flat earth
+		var
+			du = aoi.du = featureDim/c,	// [ "degs" -> "rads" ]
+			dlon = du,
+			dlat = du;
+		
+	// curved earth note: dlat -> inf when lat -> +/- 90 ie when at the poles.  Stay off the poles!
+	
+	//console.log({aoi:ring,number_of_features:chipFeatures,number_of_samples:chipPixels,chipDim:chipDim,
+	// featureDim:featureDim,lat:lat,lon:lon,dels: [dlat,dlon], ol:ol});	
+	
+	aoi.r = r; // earth radius [km] 0 implies flat
+	
+	//Log("aoi", aoi.r, du, dlon, dlat);
+	
 	aoi.csd = chipDim / chipPixels; 		// chip sampling dimension [m]
 	aoi.gfs = round(chipPixels/chipFeatures);	// ground feature samples [pixels]
 	aoi.chipPixels = chipPixels;  // samples across chip edge [pixels]
 	aoi.chipFeatures = chipFeatures;  // features along a chip edge
 	//aoi.featureDim = featureDim; // feature edge dimension [m]
-	aoi.mode = "curvedearth";
+	//aoi.mode = "curvedearth";
 	
 	aoi.lat = {min:lat, max:maxlat(TL,BL,TR,BR), ol:ol, pixels:chipPixels, del:dlat, val:lat, dim:chipDim, idx:0};
 	aoi.lon = {min:lon, max:maxlon(TL,BL,TR,BR), ol:ol, pixels:chipPixels, del:dlon, val:lon, dim:chipDim, idx:0};
@@ -1118,9 +1134,11 @@ AOI.prototype = {
 			aoi = this,
 			lat = this.lat,
 			lon = this.lon,
-			withinAOI = lat.val <= lat.max;
+			withinAOI = aoi.chips++ < HACK.limit && lat.idx <= lat.steps; //lat.val <= lat.max;
 		
-		if ( aoi.chips++ < HACK.limit )  // process if max chips not reached
+		//Log(aoi.chips, lat.idx, lon.idx);
+		
+		if ( withinAOI )  // process if max chips not reached
 			cb( new CHIP(aoi) );
 		
 		return withinAOI;	
@@ -1142,13 +1160,13 @@ function CHIP(aoi) {
 		acos = Math.acos,	
 		eps = {pos: 0.00001, scale:0.01},
 		pow = Math.pow,		
-		lat = aoi.lat,
-		lon = aoi.lon,
+		lat = aoi.lat,  // [rads]
+		lon = aoi.lon,  // [rads]
 		c = aoi.c,
-		pos = this.pos = {lat: parseFloat((lat.val*c).toFixed(4)), lon: parseFloat((lon.val*c).toFixed(4))};    // lat,lon in [degs]
+		pos = this.pos = {lat: lat.val*c, lon: lon.val*c};    // [degs]
 	
-	this.min = {lat: pos.lat*(1-eps.pos), lon:pos.lon*(1-eps.pos), scale:aoi.scale*(1-eps.scale)};
-	this.max = {lat: pos.lat*(1+eps.pos), lon:pos.lon*(1+eps.pos), scale:aoi.scale*(1+eps.scale)};
+	this.min = {lat: pos.lat*(1-eps.pos), lon:pos.lon*(1-eps.pos), scale:aoi.scale*(1-eps.scale)};  // [degs]
+	this.max = {lat: pos.lat*(1+eps.pos), lon:pos.lon*(1+eps.pos), scale:aoi.scale*(1+eps.scale)};  // [degs]
 	//this.index = ("000"+lat.idx).substr(-3) + "_" + ("000"+lon.idx).substr(-3);
 	//this.aoi = aoi;
 	this.gfs = aoi.gfs; //  number of samples across a feature
@@ -1161,7 +1179,7 @@ function CHIP(aoi) {
 	this.made = new Date(); 
 				
 	var 
-		TL = this.TL = new POS(lat.val+lat.del, lon.val),  // {x:lat, y:lon} rads
+		TL = this.TL = new POS(lat.val+lat.del, lon.val),  // {x:lat, y:lon} [rads]
 		BL = this.BL = new POS(lat.val, lon.val),
 		TR = this.TR = new POS(lat.val+lat.del, lon.val+lon.del),
 		BR = this.BR = new POS(lat.val, lon.val+lon.del);
@@ -1176,30 +1194,37 @@ function CHIP(aoi) {
 		BRd = BR.deg(c),
 		ring = [TLd, BLd, BRd, TRd, TLd];
 		
-	this.bbox = toBBox( ring ); // [TLd[0], TLd[1], BRd[0], BRd[1]];   // [min lon,lat, max lon,lat]  (degs)
+	this.bbox = toBBox( ring ); // [TLd[0], TLd[1], BRd[0], BRd[1]];   // [min lon,lat, max lon,lat]  degs
 	this.point = toPoint(TLd);
 	this.ring = toPolygon( ring );
 
-	switch (aoi.mode) { // advance lat,lon
-		case "curvedearth":
-			if ( lon.val < lon.max ) {  // advance lon
-				lon.val += lon.del * (1-lon.ol);
-				lon.idx++;
-			}
-			
-			else { // reset lon and advance lat
-				lon.val = lon.min;
-				lon.idx = 0;
-				lat.val += lat.del + (1-lat.ol);
-				lat.del = acos(1-aoi.u/pow(cos(lat.val),2));
-				lat.idx++;
-			}
-			break;
-	
-		case "flatearth":
-			break;
-	}
+	if (this.r)  // curved earth model
+		if ( lon.val < lon.max ) {  // advance lon
+			lon.val += lon.del * (1-lon.ol);
+			lon.idx++;
+		}
 
+		else { // reset lon and advance lat
+			lon.val = lon.min;
+			lon.idx = 0;
+			lat.val += lat.del * (1-lat.ol);  // + fixed to *
+			lat.del = acos(1 - aoi.du/pow(cos(lat.val),2));
+			lat.idx++;
+		}
+
+	else // flat earth model
+		if ( lon.val < lon.max ) {  // advance lon
+			lon.val += lon.del * (1-lon.ol);
+			lon.idx++;
+		}
+
+		else { // reset lon and advance lat
+			lon.val = lon.min;
+			lon.idx = 0;
+			lat.val += lat.del * (1-lat.ol);
+			lat.idx++;
+		}			
+	
 }
 
 function ROC(f,obs) {
