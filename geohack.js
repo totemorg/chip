@@ -867,7 +867,7 @@ var HACK = module.exports = {
 		
 		HACK.chipAOI(sql, aoicase, function (chip) {
 
-			//Log("make voxels above", chip);
+			Log("make voxels above", chip.ID);
 
 			for (var alt = 0; alt<4; alt++)  { // define voxels above this chip
 				sql.query(
@@ -1115,7 +1115,7 @@ function AOI( ring,chipFeatures,chipPixels,chipDim,overlap,r ) {  // build an AO
 	aoi.lon.steps = floor( (aoi.lon.max - lon) / dlon );
 	
 	//Log(lat, dlat, 1 - u / pow(cos(lat),2) );
-	//Log(aoi.lat, dlat, aoi.lon, dlon, [TL, BL, TR, BR]);
+	//Log(aoi.lat, aoi.lon, [TL, BL, TR, BR]);
 	
 	aoi.org = TL.copy();
 	aoi.ext = {		// chip step with no overlap
