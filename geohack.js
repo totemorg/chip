@@ -173,7 +173,6 @@ var HACK = module.exports = {
 												job.Load = sql.format(get.events, [where,limit,offset] );
 												job.Flux = flux;
 												job.Collects = collects;
-												job.Dump = "";
 
 												//Log("reg job",job);
 
@@ -227,7 +226,6 @@ var HACK = module.exports = {
 
 				else  { // pull all events
 					job.Load = sql.format(get.events, [where,limit,offset] );
-					job.Dump = "";
 					cb(job);
 				}					
 			}
@@ -271,7 +269,6 @@ var HACK = module.exports = {
 
 			if ( file.charAt(0) == "/" ) {  // fetch data from service
 				job.Load = file.tag("?",Job);
-				job.Dump = "";
 				cb( job );
 			}
 
