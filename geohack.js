@@ -1,7 +1,7 @@
 // UNCLASSIFIED
 
 /**
- * @class HACK
+ * @class GEOHACK
  * @requires fs
  * @requires child_process
  * @requires stream
@@ -168,11 +168,12 @@ var HACK = module.exports = {
 											[ {chipID: voxel.chipID, Name:"aoi"} ], function (voxel) {
 
 												where.voxelID = voxel.ID;
-
+												
 												job.Voxel = Copy( voxel, {} );
-												job.Load = sql.format(get.events, [where,limit,offset] );
+												job.Load = sql.format(get.events, [where,limit,offset] );  // add Job.tmin tmax parms
 												job.Flux = flux;
 												job.Collects = collects;
+												job.Chip = chip;
 
 												//Log("reg job",job);
 
