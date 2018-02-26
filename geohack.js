@@ -65,7 +65,7 @@ var HACK = module.exports = {
 
 			FS.stat(chip.path, function (err) { // check if chip in file cache
 				if (err)  // not in cache so prime it
-					fetch.wget( HACK.paths.images.tag("?", parms ), function (rtn) {
+					fetch( HACK.paths.images.tag("?", parms )+` >> ${chip.path}`, null, function (rtn) {
 						Log("fetch chip", parms.path, rtn);
 						cb( rtn ? chip : null );
 					});
@@ -81,22 +81,22 @@ var HACK = module.exports = {
 		},
 
 		collects: function makeCollects( fetch, parms, cb) {
-			fetch.http( HACK.paths.catalog.tag("?", parms), function (cat) {
+			fetch( HACK.paths.catalog.tag("?", parms), null, function (cat) {
 				cb(cat);
 			});
 		}
 	},				
 	
-	chipEvents: function ( req, Job, cb ) {  //< callback cb(job) where job is event getter hash
+	chipEvents: function ( req, Pipe, cb ) {  //< callback cb(job) where job is event getter hash
 		
 		var 
 			sql = req.sql,
-			aoi = Job.aoi || {},
+			aoi = Pipe.aoi || {},
 			voxelClass = (aoi.constructor == String) ? aoi : "noname";
 
 		Log("chip with voxel class", voxelClass );
 		
-		function regulateJob( Job ) {
+		function regulateJob( Pipe ) {
 
 			function regulateFile( file ) {
 				
@@ -110,7 +110,7 @@ var HACK = module.exports = {
 					sql.forEach(  // pull all voxels falling over specified aoi and stack them by chipID
 						"REG", 
 						"SELECT ID,Point,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID", 
-						[ toPolygon(ring), Copy(voi||{}, {Class:voxelClass}) ], function (voxel) {
+						[ toPolygon(ring), Copy(voi || {}, {Class:voxelClass}) ], function (voxel) {
 
 							sql.cache({  // determine sensor collects at chip under this voxel
 								key: {
@@ -126,6 +126,10 @@ var HACK = module.exports = {
 								make: makeCollects
 							}, function (collects) {
 
+								//Log(voxel.Ring, collects);
+								var
+									Ring = toRing( voxel.Ring );
+								
 								sql.cache({
 									key: {
 										Name1: "chip", 
@@ -135,8 +139,8 @@ var HACK = module.exports = {
 									},
 									parms: { 
 										path: `./public/images/chips/${voxel.chipID}.jpeg`,
-										bbox: toBBox(voxel.Ring),
-										ring: toPolygon(voxel.Ring),
+										bbox: toBBox( Ring ),
+										ring: toPolygon( Ring ),
 										lat: voxel.Point.x,
 										lon: voxel.Point.y
 									},
@@ -170,7 +174,7 @@ var HACK = module.exports = {
 												where.voxelID = voxel.ID;
 												
 												job.Voxel = Copy( voxel, {} );
-												job.Load = sql.format(get.events, [where,limit,offset] );  // add Job.tmin tmax parms
+												job.Load = sql.format(get.events, [where,limit,offset] );  // add Pipe.tmin tmax parms
 												job.Flux = flux;
 												job.Collects = collects;
 												job.Chip = chip;
@@ -212,18 +216,18 @@ var HACK = module.exports = {
 					});
 
 				else
-				if (aoi = Job.aoi)  // regulate chips or events through voxels
+				if (aoi = Pipe.aoi)  // regulate chips or events through voxels
 					if ( aoi.constructor == String )  // testing hypothesis
 						sql.forEach( "REG", "SELECT Ring FROM app.aois WHERE ?", {Name:aoi}, function (rec) {
 							try {
-								regulateVoxels( Job.voi, soi, JSON.parse(rec.Ring), true, true );
+								regulateVoxels( Pipe.voi, soi, JSON.parse(rec.Ring), true, true );
 							}
 							catch (err) {
 							}
 						});
 
 					else  // not testing a hypothesis
-						regulateVoxels( Job.voi, soi, aoi, false, false );
+						regulateVoxels( Pipe.voi, soi, aoi, false, false );
 
 				else  { // pull all events
 					job.Load = sql.format(get.events, [where,limit,offset] );
@@ -232,15 +236,15 @@ var HACK = module.exports = {
 			}
 			
 			var 
-				group = Job.group,
-				where = Job.where || {},
-				order = Job.order || "t",
-				limit = Job.limit || 1000,
-				soi = Job.soi || {},
-				file = Job.file,
+				group = Pipe.group,
+				where = Pipe.where || {},
+				order = Pipe.order || "t",
+				limit = Pipe.limit || 1000,
+				soi = Pipe.soi || {},
+				file = Pipe.file || Pipe.source || 0,
 				src = `${req.group}.events`, //"??.events LEFT JOIN ??.voxels ON events.voxelID = voxels.ID ",
 				fields = "*",
-				offset = Job.offset || 0, 
+				offset = Pipe.offset || 0, 
 				get = {
 					events: `SELECT ${fields} FROM ${src} WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
 					chips: `SELECT ${group} FROM ${src} GROUP BY ${group} `,
@@ -254,94 +258,126 @@ var HACK = module.exports = {
 					class: req.table,
 					credit: req.profile.Credit,
 					name: req.table,
-					task: Job.task || "",
+					task: Pipe.task || "",
 					notes: [
 							req.table.tag("?",req.query).tag("a", {href:"/" + req.table + ".run"}), 
 							((req.profile.Credit>0) ? "funded" : "unfunded").tag("a",{href:req.url}),
 							"RTP".tag("a", {
-								href:`/rtpsqd.view?task=${Job.task}`
+								href:`/rtpsqd.view?task=${Pipe.task}`
 							}),
 							"PMR brief".tag("a", {
-								href:`/briefs.view?options=${Job.task}`
+								href:`/briefs.view?options=${Pipe.task}`
 							})
 					].join(" || ")
 				},
 				regmsg = `REG ${job.name}@${job.qos}`;
 
-			if ( file.charAt(0) == "/" ) {  // fetch data from service
-				job.Load = file.tag("?",Job);
-				cb( job );
+			switch ( file.constructor ) {
+				case String: 
+					if ( file.charAt(0) == "/" ) {  // fetch data from service
+						job.Load = file.tag("?",Pipe);
+						cb( job );
+					}
+
+					/*
+					else
+					if (false)  // regulate a image chipping ring [ [lat,lon], ... ]
+						HACK.chipAOI(Pipe, job, function (chip,dets,sql) {
+							var updated = new Date();
+
+							//Log({save:dets});
+							sql.query(
+								"REPLACE INTO ??.chips SET ?,Ring=GeomFromText(?),Point=GeomFromText(?)", [ 
+									group, {
+										Thread: job.thread,
+										Save: JSON.stringify(dets),
+										t: updated,
+										x: chip.pos.lat,
+										y: chip.pos.lon
+									},
+									chip.ring,
+									chip.point
+							]);
+
+							// reserve voxel detectors above this chip
+							for (var vox=HACK.voxelSpecs,alt=vox.minAlt, del=vox.deltaAlt, max=vox.maxAlt; alt<max; alt+=del) 
+								sql.query(
+									"REPLACE INTO ??.voxels SET ?,Ring=GeomFromText(?),Point=GeomFromText(?)", [
+									group, {
+										Thread: job.thread,
+										Save: null,
+										t: updated,
+										x: chip.pos.lat,
+										y: chip.pos.lon,
+										z: alt
+									},
+									chip.ring,
+									chip.point
+								]);
+
+						});
+					*/
+
+					else  // regulate aoi
+						sql.forEach( regmsg,  get.files, {Name: file}, function (file) {  // regulate requested file(s)
+
+							job.File = Copy( file, {} );
+							where.fileID = file.ID;
+
+							if (file.Archived) 
+								CP.exec("", function () {
+									Trace("RESTORING "+file.Name);
+									sql.query("UPDATE app.files SET Archived=false WHERE ?", {ID: file.ID});
+									regulateFile(file);
+								});
+
+							else
+								regulateFile(file);
+
+						});
+				
+					break;
+					
+				case Array:  // file contains events
+					job.Load = file;
+					cb(job);
+					break;
+					
+				case Object:  // file contains events
+					job.Load = [file];
+					cb(job);
+					break;
 			}
 
-			/*
-			else
-			if (false)  // regulate a image chipping ring [ [lat,lon], ... ]
-				HACK.chipAOI(Job, job, function (chip,dets,sql) {
-					var updated = new Date();
-
-					//Log({save:dets});
-					sql.query(
-						"REPLACE INTO ??.chips SET ?,Ring=GeomFromText(?),Point=GeomFromText(?)", [ 
-							group, {
-								Thread: job.thread,
-								Save: JSON.stringify(dets),
-								t: updated,
-								x: chip.pos.lat,
-								y: chip.pos.lon
-							},
-							chip.ring,
-							chip.point
-					]);
-
-					// reserve voxel detectors above this chip
-					for (var vox=HACK.voxelSpecs,alt=vox.minAlt, del=vox.deltaAlt, max=vox.maxAlt; alt<max; alt+=del) 
-						sql.query(
-							"REPLACE INTO ??.voxels SET ?,Ring=GeomFromText(?),Point=GeomFromText(?)", [
-							group, {
-								Thread: job.thread,
-								Save: null,
-								t: updated,
-								x: chip.pos.lat,
-								y: chip.pos.lon,
-								z: alt
-							},
-							chip.ring,
-							chip.point
-						]);
-
-				});
-			*/
-			
-			else  // regulate aoi
-				sql.forEach( regmsg,  get.files, {Name: file}, function (file) {  // regulate requested file(s)
-
-					job.File = Copy( file, {} );
-					where.fileID = file.ID;
-
-					if (file.Archived) 
-						CP.exec("", function () {
-							Trace("RESTORING "+file.Name);
-							sql.query("UPDATE app.files SET Archived=false WHERE ?", {ID: file.ID});
-							regulateFile(file);
-						});
-						
-					else
-						regulateFile(file);
-						
-				});
 		}
 
-		if ( Job.constructor == String ) 
-			sql.forEach( "REG", "SELECT Job FROM app.jobs WHERE ?", {Name:Job}, function (rec) {
-				try {
-					regulateJob( JSON.parse(rec.Job) );
-				}
-				catch (err) {
-				}
-			});
-
-		else
-			regulateJob( Job );
+		switch ( Pipe.constructor ) {
+			case String:
+				if ( Pipe.charAt(0) == "/" )
+					regulateJob({ file: Pipe });
+					
+				else
+				if ( Pipe.indexOf(".") >= 0 )
+					regulateJob({ file: Pipe });
+				
+				else
+				sql.forEach( "REG", "SELECT Pipe FROM app.jobs WHERE ?", {Name:Pipe}, function (rec) {
+					try {
+						regulateJob( JSON.parse(rec.Pipe) );
+					}
+					catch (err) {
+					}
+				});
+				break;
+			case Array:
+				regulateJob({
+					file: Pipe
+				});
+				break
+			case Object:
+				regulateJob( Pipe );
+				break;
+		}
 	},	
 	
 	ingestCache: function (sql, fileID, cb) {  // ingest the evcache into the events with callback cb(aoi)
@@ -1525,7 +1561,7 @@ function toPolygon(ring) {  // [ [lon,lat], ... ] degs
 }
 
 function toPoint( u ) {  // [lon,lat] degs
-	return 	`POINT(${u[0]} ${u[1]})`
+	return 	`POINT(${u[0]} ${u[1]})`;
 }
 
 function toBBox(poly) {  // [ [lon,lat], ...] degs
@@ -1537,4 +1573,11 @@ function toBBox(poly) {  // [ [lon,lat], ...] degs
 	return bbox.join(",");
 }
 	
-		
+function toRing(poly) {
+	var rtn = [];
+	poly[0].forEach( function (pt) {
+		rtn.push( [pt.x, pt.y] );
+	});
+	return rtn;
+}
+
