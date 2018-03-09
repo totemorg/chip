@@ -26,6 +26,9 @@ export SRV_TOTEM="localhost:8080"
 export WMS_TOTEM="http://$SRV_TOTEM/wms"
 export WFS_TOTEM="http://$SRV_TOTEM/wfs" 
 
+export SRV_ARTILLERY=https://widow.ic.gov
+export SRV_MISSILES=https://widow.ic.gov
+
 # IDOP conversion utilities
 export IVA=$BASE/iva
 export GDAL=$BASE/gdal
