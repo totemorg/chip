@@ -22,9 +22,9 @@ export SRV_ESS="ess.nga.ic.gov"
 export WMS_ESS="https://$SRV_ESS?service=WMS&version=1.1.1&request=getMap&styles=population&srs=EPSG%3A4326&format=image%2Fpgn"
 export WFS_ESS="wgets://$SRV_ESS/ogc/rest/csw/record?caceResults=true&outputSchema=RESTfullView-1.1&streamable=all&responseFormat=json"
 
-export SRV_TOTEM="localhost:8080"
-export WMS_TOTEM="http://$SRV_TOTEM/wms"
-export WFS_TOTEM="http://$SRV_TOTEM/wfs" 
+export SRV_TOTEM=$TOTEM_WORKER
+export WMS_TOTEM="$SRV_TOTEM/wms"
+export WFS_TOTEM="$SRV_TOTEM/wfs" 
 
 export SRV_ARTILLERY=https://widow.ic.gov
 export SRV_MISSILES=https://widow.ic.gov

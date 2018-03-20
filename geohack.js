@@ -398,7 +398,7 @@ var HACK = module.exports = {
 				"INGEST",
 				
 				"SELECT "
-				+ "? AS Voxelized, "
+				+ "? AS Voxels, "
 				+ "min(x) AS xMin, max(x) AS xMax, "
 				+ "min(y) AS yMin, max(y) AS yMax, "
 				+ "min(z) AS zMin, max(z) AS zMax, "
@@ -406,7 +406,7 @@ var HACK = module.exports = {
 				+ "max(t)+1 AS Steps, "
 				+ "max(u)+1 AS States, "
 				+ "max(n)+1 AS Actors, "
-				+ "count(id) AS Sampled "
+				+ "count(id) AS Samples "
 				+ "FROM app.evcache WHERE ?", 
 				
 				[ info.affectedRows, {fileID:fileID} ],	cb);
@@ -496,9 +496,9 @@ var HACK = module.exports = {
 								States: aoi.States,
 								Steps: aoi.Steps,
 								Actors: aoi.Actors,
-								Sampled: aoi.Sampled,
-								Voxelized: aoi.Voxelized,
-								Rejected: aoi.Rejected,
+								Samples: aoi.Samples,
+								Voxels: aoi.Voxels,
+								Rejects: aoi.Rejects,
 								Graded: false,
 								Pruned: false,
 								Archived: false
@@ -903,12 +903,12 @@ var HACK = module.exports = {
 
 			Log("make voxels above", chip.ID);
 
-			for (var alt = 0; alt<4; alt++)  { // define voxels above this chip
+			for (var alt=0, n=0; n<aoicase.voxelCount; n++,alt+=aoicase.voxelDepth)  { // define voxels above this chip
 				sql.query(
 					"INSERT INTO app.voxels SET ?, Ring=GeomFromText(?), Point=GeomFromText(?)", [{
 					class: aoicase.Name,
 					minAlt: alt,
-					maxAlt: alt+1,
+					maxAlt: alt+aoicase.voxelDepth,
 					chipID: chip.ID,
 					added: now,
 					minSNR: 0
