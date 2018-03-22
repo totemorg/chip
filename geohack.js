@@ -183,7 +183,7 @@ var HACK = module.exports = {
 
 												// test chipID if over ground truth site then start a ROC workflow
 
-												sql.insertJob( Copy(job,{}), function (sql, job) {  // put job into the job queue
+												sql.insertJob( job, function (sql, job) {  // put job into the job queue
 													cb( job );
 												});
 											});	
