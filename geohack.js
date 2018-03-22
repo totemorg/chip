@@ -448,10 +448,10 @@ var HACK = module.exports = {
 								x: ev.x || 0,		// lon [degs]
 								y: ev.y || 0,		// lat [degs]
 								z: ev.z || 0,		// alt [m]
-								t: ev.t || 0,		// tod 
-								n: ev.n || 0,		// ensemble id 
-								u: ev.u || 0,		// state 
-								fileID: fileID
+								t: ev.t || 0,		// sample time
+								n: ev.n || 0,		// unqiue id 
+								u: ev.u || 0,		// current state 
+								fileID: fileID		// source file
 							},
 							toPoint( [ev.x || 0, ev.y || 0] )
 						] );
