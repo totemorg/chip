@@ -88,20 +88,19 @@ var HACK = module.exports = {
 		}
 	},				
 	
-	chipEvents: function ( req, Pipe, cb ) {  //< callback cb(job) where job is event getter hash
+	chipEvents: function ( sql, pipe, cb ) {  //< callback cb(job) where job is event getter hash
 		
 		var 
-			sql = req.sql,
-			aoi = Pipe.aoi || {},
+			aoi = pipe.aoi || {},
 			voxelClass = (aoi.constructor == String) ? aoi : "noname";
 
 		Log("chip with voxel class", voxelClass );
 		
-		function regulateJob( Pipe ) {
+		function chipJob( pipe ) {
 
-			function regulateFile( file ) {
+			function chipFiles( file ) {
 				
-				function regulateVoxels( voi, soi, ring, isDetecting, genROC ) {
+				function chipVoxels( voi, soi, ring, isDetecting, genROC ) {
 				
 					var
 						makeChip = HACK.make.chip,
@@ -174,19 +173,15 @@ var HACK = module.exports = {
 
 												where.voxelID = voxel.ID;
 												
-												job.Voxel = Copy( voxel, {} );
-												job.Load = sql.format(get.events, [where,limit,offset] );  // add Pipe.tmin tmax parms
-												job.Flux = flux;
-												job.Collects = collects;
-												job.Chip = chip;
-
-												//Log("reg job",job);
+												cb({
+													Voxel: Copy( voxel, {} ),
+													Load: sql.format(get.events, [where,limit,offset] ),  // add pipe.tmin tmax parms
+													Flux: flux,
+													Collects: collects,
+													Chip: chip
+												});
 
 												// test chipID if over ground truth site then start a ROC workflow
-
-												sql.insertJob( job, function (sql, job) {  // put job into the job queue
-													cb( job );
-												});
 											});	
 
 									});
@@ -196,6 +191,7 @@ var HACK = module.exports = {
 					});
 				}
 				
+				/*
 				if ( group )  // regulate chips 
 					sql.forEach( regmsg, get.chips, [ req.group, req.group, req, group ], function (chip) {  // process each chip
 						var 
@@ -216,19 +212,19 @@ var HACK = module.exports = {
 						});
 					});
 
-				else
-				if (aoi = Pipe.aoi)  // regulate chips or events through voxels
+				else */
+				if (aoi = pipe.aoi)  // regulate chips or events through voxels
 					if ( aoi.constructor == String )  // testing hypothesis
 						sql.forEach( "REG", "SELECT Ring FROM app.aois WHERE ?", {Name:aoi}, function (rec) {
 							try {
-								regulateVoxels( Pipe.voi, soi, JSON.parse(rec.Ring), true, true );
+								chipVoxels( pipe.voi, soi, JSON.parse(rec.Ring), true, true );
 							}
 							catch (err) {
 							}
 						});
 
 					else  // not testing a hypothesis
-						regulateVoxels( Pipe.voi, soi, aoi, false, false );
+						chipVoxels( pipe.voi, soi, aoi, false, false );
 
 				else  { // pull all events
 					job.Load = sql.format(get.events, [where,limit,offset] );
@@ -237,53 +233,34 @@ var HACK = module.exports = {
 			}
 			
 			var 
-				group = Pipe.group,
-				where = Pipe.where || {},
-				order = Pipe.order || "t",
-				limit = Pipe.limit || 1000,
-				soi = Pipe.soi || {},
-				file = Pipe.file || Pipe.source || 0,
+				group = pipe.group,
+				where = pipe.where || {},
+				order = pipe.order || "t",
+				limit = pipe.limit || 1000,
+				soi = pipe.soi || {},
+				file = pipe.file || pipe.source || 0,
 				src = `${req.group}.events`, //"??.events LEFT JOIN ??.voxels ON events.voxelID = voxels.ID ",
 				fields = "*",
-				offset = Pipe.offset || 0, 
+				offset = pipe.offset || 0, 
 				get = {
 					events: `SELECT ${fields} FROM ${src} WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
 					chips: `SELECT ${group} FROM ${src} GROUP BY ${group} `,
 					voxels: "SELECT * FROM app.voxels WHERE ?", 
 					files: "SELECT * FROM app.files WHERE ?"
 				},
-				job = { // job descriptor for regulator
-					qos: req.profile.QoS, 
-					priority: 0,
-					client: req.client,
-					class: req.table,
-					credit: req.profile.Credit,
-					name: req.table,
-					task: Pipe.task || "",
-					notes: [
-							req.table.tag("?",req.query).tag("a", {href:"/" + req.table + ".run"}), 
-							((req.profile.Credit>0) ? "funded" : "unfunded").tag("a",{href:req.url}),
-							"RTP".tag("a", {
-								href:`/rtpsqd.view?task=${Pipe.task}`
-							}),
-							"PMR brief".tag("a", {
-								href:`/briefs.view?options=${Pipe.task}`
-							})
-					].join(" || ")
-				},
 				regmsg = `REG ${job.name}@${job.qos}`;
 
 			switch ( file.constructor ) {
 				case String: 
 					if ( file.charAt(0) == "/" ) {  // fetch data from service
-						job.Load = file.tag("?",Pipe);
+						job.Load = file.tag("?",pipe);
 						cb( job );
 					}
 
 					/*
 					else
 					if (false)  // regulate a image chipping ring [ [lat,lon], ... ]
-						HACK.chipAOI(Pipe, job, function (chip,dets,sql) {
+						HACK.chipAOI(pipe, job, function (chip,dets,sql) {
 							var updated = new Date();
 
 							//Log({save:dets});
@@ -329,11 +306,11 @@ var HACK = module.exports = {
 								CP.exec("", function () {
 									Trace("RESTORING "+file.Name);
 									sql.query("UPDATE app.files SET Archived=false WHERE ?", {ID: file.ID});
-									regulateFile(file);
+									chipFiles(file);
 								});
 
 							else
-								regulateFile(file);
+								chipFiles(file);
 
 						});
 				
@@ -352,31 +329,31 @@ var HACK = module.exports = {
 
 		}
 
-		switch ( Pipe.constructor ) {
+		switch ( pipe.constructor ) {
 			case String:
-				if ( Pipe.charAt(0) == "/" )
-					regulateJob({ file: Pipe });
+				if ( pipe.charAt(0) == "/" )
+					chipJob({ file: pipe });
 					
 				else
-				if ( Pipe.indexOf(".") >= 0 )
-					regulateJob({ file: Pipe });
+				if ( pipe.indexOf(".") >= 0 )
+					chipJob({ file: pipe });
 				
 				else
-				sql.forEach( "REG", "SELECT Pipe FROM app.jobs WHERE ?", {Name:Pipe}, function (rec) {
+				sql.forEach( "REG", "SELECT pipe FROM app.jobs WHERE ?", {Name:pipe}, function (rec) {
 					try {
-						regulateJob( JSON.parse(rec.Pipe) );
+						chipJob( JSON.parse(rec.pipe) );
 					}
 					catch (err) {
 					}
 				});
 				break;
 			case Array:
-				regulateJob({
-					file: Pipe
+				chipJob({
+					file: pipe
 				});
 				break
 			case Object:
-				regulateJob( Pipe );
+				chipJob( pipe );
 				break;
 		}
 	},	
