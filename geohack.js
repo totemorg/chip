@@ -90,27 +90,23 @@ var HACK = module.exports = {
 	
 	chipEvents: function ( sql, pipe, cb ) {  //< callback cb(job) where job is event getter hash
 		
-		var 
-			aoi = pipe.aoi || {},
-			voxelClass = (aoi.constructor == String) ? aoi : "noname";
-
-		Log("chip with voxel class", voxelClass );
-		
 		function chipJob( pipe ) {
 
-			function chipFiles( file ) {
+			function chipFile( file ) { 
 				
-				function chipVoxels( voi, soi, ring, isDetecting, genROC ) {
+				function chipVoxels( hypo, voi, soi, ring) {
 				
 					var
 						makeChip = HACK.make.chip,
 						makeFlux = HACK.make.flux,
 						makeCollects = HACK.make.collects;
 
+					Log("chip with hypo/voxel class", hypo );
+					
 					sql.forEach(  // pull all voxels falling over specified aoi and stack them by chipID
 						"REG", 
 						"SELECT ID,Point,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID", 
-						[ toPolygon(ring), Copy(voi || {}, {Class:voxelClass}) ], function (voxel) {
+						[ toPolygon(ring), Copy(voi || {}, {Class:hypo}) ], function (voxel) {
 
 							sql.cache({  // determine sensor collects at chip under this voxel
 								key: {
@@ -174,14 +170,16 @@ var HACK = module.exports = {
 												where.voxelID = voxel.ID;
 												
 												cb({
-													Voxel: Copy( voxel, {} ),
-													Load: sql.format(get.events, [where,limit,offset] ),  // add pipe.tmin tmax parms
+													File: file,
+													Voxel: voxel,
+													Events: sql.format(get.events, [where,limit,offset] ),  // add pipe.tmin tmax parms
 													Flux: flux,
 													Collects: collects,
 													Chip: chip
 												});
 
-												// test chipID if over ground truth site then start a ROC workflow
+												if (hypo) {  // test chipID if over ground truth site then start a ROC workflow
+												}
 											});	
 
 									});
@@ -217,46 +215,42 @@ var HACK = module.exports = {
 					if ( aoi.constructor == String )  // testing hypothesis
 						sql.forEach( "REG", "SELECT Ring FROM app.aois WHERE ?", {Name:aoi}, function (rec) {
 							try {
-								chipVoxels( pipe.voi, soi, JSON.parse(rec.Ring), true, true );
+								chipVoxels( aoi, pipe.voi, soi, JSON.parse(rec.Ring) );
 							}
 							catch (err) {
 							}
 						});
 
 					else  // not testing a hypothesis
-						chipVoxels( pipe.voi, soi, aoi, false, false );
+						chipVoxels( "", pipe.voi, soi, aoi );
 
-				else  { // pull all events
-					job.Load = sql.format(get.events, [where,limit,offset] );
-					cb(job);
-				}					
+				else  // pull all events
+					cb({ 
+						Events: sql.format(get.events, [where,limit,offset] ),
+						File: file
+					});
 			}
 			
 			var 
+				fetcher = HACK.fetcher || function () {},
 				group = pipe.group,
 				where = pipe.where || {},
 				order = pipe.order || "t",
 				limit = pipe.limit || 1000,
 				soi = pipe.soi || {},
-				file = pipe.file || pipe.source || 0,
-				src = `${req.group}.events`, //"??.events LEFT JOIN ??.voxels ON events.voxelID = voxels.ID ",
+				src = pipe.file || pipe.source || "",
 				fields = "*",
 				offset = pipe.offset || 0, 
 				get = {
-					events: `SELECT ${fields} FROM ${src} WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
-					chips: `SELECT ${group} FROM ${src} GROUP BY ${group} `,
+					events: `SELECT ${fields} FROM app.events WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
+					chips: `SELECT ${group} FROM app.events GROUP BY ${group} `,
 					voxels: "SELECT * FROM app.voxels WHERE ?", 
 					files: "SELECT * FROM app.files WHERE ?"
 				},
-				regmsg = `REG ${job.name}@${job.qos}`;
+				regmsg = `REG ${pipe.name}`;
 
-			switch ( file.constructor ) {
+			switch ( src.constructor ) {
 				case String: 
-					if ( file.charAt(0) == "/" ) {  // fetch data from service
-						job.Load = file.tag("?",pipe);
-						cb( job );
-					}
-
 					/*
 					else
 					if (false)  // regulate a image chipping ring [ [lat,lon], ... ]
@@ -295,35 +289,36 @@ var HACK = module.exports = {
 
 						});
 					*/
+					sql.forEach( regmsg,  get.files, {Name: src}, function (file) {  // regulate requested file(s)
 
-					else  // regulate aoi
-						sql.forEach( regmsg,  get.files, {Name: file}, function (file) {  // regulate requested file(s)
+						where.fileID = file.ID;
 
-							job.File = Copy( file, {} );
-							where.fileID = file.ID;
+						if (file.Archived) 
+							CP.exec("", function () {
+								Trace("RESTORING "+file.Name);
+								sql.query("UPDATE app.files SET Archived=false WHERE ?", {ID: file.ID});
+								chipFile(file);
+							});
 
-							if (file.Archived) 
-								CP.exec("", function () {
-									Trace("RESTORING "+file.Name);
-									sql.query("UPDATE app.files SET Archived=false WHERE ?", {ID: file.ID});
-									chipFiles(file);
-								});
+						else
+							chipFile(file);
 
-							else
-								chipFiles(file);
-
-						});
+					});
 				
 					break;
 					
-				case Array:  // file contains events
-					job.Load = file;
-					cb(job);
+				case Array:  // src contains event list
+					cb({
+						File: {ID: 0, Name:""},
+						Events: src
+					});
 					break;
 					
-				case Object:  // file contains events
-					job.Load = [file];
-					cb(job);
+				case Object:  // src contains single event
+					cb({
+						File: {ID: 0, Name:""},
+						Events: [src]
+					});
 					break;
 			}
 
@@ -347,11 +342,13 @@ var HACK = module.exports = {
 					}
 				});
 				break;
+			
 			case Array:
 				chipJob({
 					file: pipe
 				});
 				break
+			
 			case Object:
 				chipJob( pipe );
 				break;
@@ -362,14 +359,13 @@ var HACK = module.exports = {
 		
 		sql.forAll(  // ingest evcache into events history by determining which voxel they fall within
 			"INGEST",
-			
-			"INSERT INTO app.events SELECT evcache.*,voxels.ID AS voxelID "
-			+ "FROM app.evcache "
-			+ "LEFT JOIN app.voxels ON MBRcontains(voxels.Ring,evcache.Point) AND "
-			+ "evcache.z BETWEEN voxels.minAlt AND voxels.maxAlt WHERE ? HAVING voxelID",
-			
+			fileID 
+				? "INSERT INTO app.events SELECT evcache.*,voxels.ID AS voxelID FROM app.evcache " 
+						+ "LEFT JOIN app.voxels ON MBRcontains(voxels.Ring,evcache.Point) AND "
+						+ "evcache.z BETWEEN voxels.minAlt AND voxels.maxAlt WHERE ? HAVING voxelID"
+
+				: "INSERT INTO app.events SELECT *,0 AS voxelID FROM app.evcache WHERE ?" ,
 			{"evcache.fileID":fileID},
-			
 			function (info) {
 				
 			sql.forFirst(
@@ -403,7 +399,7 @@ var HACK = module.exports = {
 		});
 	},
 
-	ingestSink: function (sql, filter, fileID, cb) {  // return a sinking stream for piped events with callback cb(aoi) when finished.
+	ingestSink: function (sql, filter, fileID, cb) {  // return sinking stream for piping events with callback cb(aoi) when finished.
 		var 
 			ingested = 0,
 			sink = new STREAM.Writable({
@@ -495,15 +491,16 @@ var HACK = module.exports = {
 		return sink;
 	},
 	
-	ingestList: function (sql, evs, fileID, cb) { // ingest events from supplied list with callback cb(aoi).
+	ingestList: function (sql, evs, fileID, cb) { // ingest events list to internal fileID with callback cb(aoi).
 	/**
 	@member HACK
 	@private
 	@method ingestList
-	@param {String} path to file, {streaming parms}, or [ ev, ... ] to ingest
 	@param {Object} sql connector
-	@param {Function} cb Response callback( ingested aoi, cb (table,id) to return info )
-	Ingest events and autorun ingestable plugins if enabled.
+	@param {Array} evs events [ ev, ... ] to ingest
+	@param {Number} fileID of internal event store (0 to bypass voxelization)	
+	@param {Function} cb Response callback( ingested aoi info )
+	Ingest an event list into the internal events file.
 	*/
 		//Trace(`INGEST ${evs.length} EVENTS ON ${fileID}`);
 		
@@ -520,15 +517,16 @@ var HACK = module.exports = {
 		src.pipe(sink);  // start the ingest
 	},
 	
-	ingestFile: function (sql, filePath, fileID, cb) {  // ingest events from file path with callback cb(aoi).
+	ingestFile: function (sql, evsPath, fileID, cb) {  // ingest events in evsPath to internal fileID with callback cb(aoi).
 	/**
 	@member HACK
 	@private
 	@method ingestFile
-	@param {String} path to file, {streaming parms}, or [ ev, ... ] to ingest
 	@param {Object} sql connector
-	@param {Function} cb Response callback( ingested aoi, cb (table,id) to return info )
-	Ingest events and autorun ingestable plugins if enabled.
+	@param {String} path to events file containing JSON or csv info
+	@param {Number} fileID of internal event store (0 to bypass voxelization)
+	@param {Function} cb Response callbatck( ingested aoi info )
+	Ingest events in a file to the internal events file.
 	*/
 		function filter(buf, cb) {
 			buf.split("\n").each( function (n,rec) {
@@ -561,7 +559,7 @@ var HACK = module.exports = {
 		}
 		
 		var
-			src = FS.createReadStream(filePath,"utf8"),
+			src = FS.createReadStream(evsPath,"utf8"),
 			sink = HACK.ingestSink(sql, filter, fileID, cb);
 
 		src.pipe(sink); // ingest events into db
