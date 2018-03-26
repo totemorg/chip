@@ -26,8 +26,11 @@ export SRV_TOTEM=$TOTEM_WORKER
 export WMS_TOTEM="$SRV_TOTEM/wms"
 export WFS_TOTEM="$SRV_TOTEM/wfs" 
 
-export SRV_ARTILLERY=https://widow.ic.gov
-export SRV_MISSILES=https://widow.ic.gov
+export SRV_OPIR=https://tbd.ic.gov
+export SRV_ARTILLERY="$SRV_OPIR/tbd"
+export SRV_MISSILES="$SRV_OPIR/tbd"
+export SRV_FINO=https://tbd.ic.gov
+export SRV_FRAUD="$SRV_FINO/tbd"
 
 # IDOP conversion utilities
 export IVA=$BASE/iva
