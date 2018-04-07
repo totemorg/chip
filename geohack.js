@@ -66,7 +66,7 @@ var HACK = module.exports = {
 
 			FS.stat(chip.path, function (err) { // check if chip in file cache
 				if (err)  // not in cache so prime it
-					fetch( HACK.paths.images.tag("?", parms )+` >> ${chip.path}`, null, function (rtn) {
+					fetch( HACK.paths.images.tag("?", parms )+` >> ${chip.path}`, null, null, function (rtn) {
 						Log("fetch chip", parms.path, rtn);
 						cb( rtn ? chip : null );
 					});
@@ -82,7 +82,7 @@ var HACK = module.exports = {
 		},
 
 		collects: function makeCollects( fetch, parms, cb) {
-			fetch( HACK.paths.catalog.tag("?", parms), null, function (cat) {
+			fetch( HACK.paths.catalog.tag("?", parms), null, null, function (cat) {
 				cb(cat);
 			});
 		}
@@ -232,7 +232,7 @@ var HACK = module.exports = {
 			}
 			
 			var 
-				fetcher = HACK.fetcher || function () {},
+				//fetcher = HACK.fetcher || function () {},
 				group = pipe.group,
 				where = pipe.where || {},
 				order = pipe.order || "t",
@@ -572,7 +572,7 @@ var HACK = module.exports = {
 			tmax = chan.tmax;
 		
 		HACK.thread( function (sql) {	
-			fetch( url.tag("?", {tmin:tmin,tmax:tmax}), function (evs) {
+			fetch( url.tag("?", {tmin:tmin,tmax:tmax}), null, null, function (evs) {
 				var 
 					n = 0,
 					str = HACK.ingestStream( sql, "guest", function () {
@@ -583,7 +583,7 @@ var HACK = module.exports = {
 		});
 	},	
 			
-	thread: null,
+	thread: () => { Trace("sql thread not configured"); },  //< sql threader
 	
 	errors: {
 		nowfs: new Error("chipping cataloge service failed"),
@@ -1328,7 +1328,7 @@ CHIP.prototype = {
 }
 
 function Trace(msg,arg) {
-	ENUM.trace("C>",msg,arg);
+	ENUM.trace("G>",msg,arg);
 }
 
 function util(sql, runopt, input, rots, pads, flips) {
@@ -1480,10 +1480,10 @@ function util(sql, runopt, input, rots, pads, flips) {
 	});
 }
 
-if (args = process.argv)
-if (args.length >= 3)
-if (thread = HACK.thread)
-	thread(function (sql) {
+//================ unit testing and db setups
+
+if (args = null)
+	thread( function (sql) {
 		switch ( args[2] ) {
 			case "--util":
 				util(sql, args[3], args[4], [], [], []);
@@ -1509,23 +1509,22 @@ if (thread = HACK.thread)
 				util(sql,"maketest","revbg.txt",[0],[0],[""]);
 				break;
 
+			case "--rings":
+				var 
+					c = 180/Math.PI,
+					ring = [
+						[70.0899, 33.9108], // TL lon,lat [degs]
+						[70.0988, 33.9018], // TR
+						[70.0988, 33.9105], // BR
+						[70.0899, 33.9105] // BL
+					];
+
+				console.log({deg: ring[0], rad: ring[0].pos(c), degrtn: ring[0].pos(c).deg(c)});
+				
 			default:
 				Trace("IGNORING UTIL SWITCH "+args[2]);
 		}
 	});
-
-if (false) {
-	var 
-		c = 180/Math.PI,
-		ring = [
-			[70.0899, 33.9108], // TL lon,lat [degs]
-			[70.0988, 33.9018], // TR
-			[70.0988, 33.9105], // BR
-			[70.0899, 33.9105] // BL
-		];
-
-	console.log({deg: ring[0], rad: ring[0].pos(c), degrtn: ring[0].pos(c).deg(c)});
-}
 
 function toPolygon(ring) {  // [ [lon,lat], ... ] degs
 	return 'POLYGON((' + [  
