@@ -1,6 +1,5 @@
 // UNCLASSIFIED
 
-
 /**
  * @class GEOHACK
  * @requires fs
@@ -850,15 +849,17 @@ var HACK = module.exports = {
 		// [70.0899,33.9018],[70.0990,33.9105],[70.0902,33.9109], [70.0988,33.9016],
 	},
 	
-	config: function (opts) {  //< reconfigure the hackit
+	config: function (opts,cb) {  //< configure it
 		
-		if (opts) Copy(opts, HACK);
+		if (opts) Copy(opts, HACK, ".");
 		
+		/*
 		if ( streamingWindow = HACK.streamingWindow)
 			HACK.ingestStreams(streamingWindow, function (twindow,status,sql) {
 				console.log(twindow,status);
-			});
+			}); */			
 
+		if (cb) cb(null);
 		return HACK;
 	},
 	
