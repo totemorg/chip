@@ -210,7 +210,7 @@ var HACK = module.exports = {
 					});
 
 				else */
-				if (aoi = pipe.aoi)  // regulate chips or events through voxels
+				if (aoi = pipe.aoi)  { // regulate chips or events through voxels
 					if ( aoi.constructor == String )  // testing hypothesis
 						sql.forEach( "REG", "SELECT Ring FROM app.aois WHERE ?", {Name:aoi}, function (rec) {
 							try {
@@ -222,7 +222,8 @@ var HACK = module.exports = {
 
 					else  // not testing a hypothesis
 						chipVoxels( "", pipe.voi, soi, aoi );
-
+				}
+				
 				else  // pull all events
 					cb({ 
 						Events: sql.format(get.events, [where,limit,offset] ),
