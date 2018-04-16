@@ -58,22 +58,6 @@ var HACK = module.exports = {
 	aoi: null, 			//< current aoi being processed
 	limit: 1e99, 		//< max numbers of chips to pull over any aoi
 
-	Array: [
-		function sample() {
-			return this[ floor( random() * this.length ) ];
-		},
-
-		function scale(a) {
-			for (var n=0, N=this.length; n<N; n++) this[n] = this[n] * a;
-		}
-	],
-	
-	Date: [
-		function getJulian() {
-			return Math.ceil((this / 86400000) - (this.getTimezoneOffset()/1440) + 2440587.5);
-		}
-	],
-	
 	make: { 
 		chip: function makeChip( fetch, parms, cb ) {
 			var chip = parms;
@@ -1573,5 +1557,19 @@ function toRing(poly) {
 	return rtn;
 }
 
-HACK.Date.extend(Date);
-HACK.Array.extend(Array);
+[
+	function sample() {
+		return this[ floor( random() * this.length ) ];
+	},
+
+	function scale(a) {
+		for (var n=0, N=this.length; n<N; n++) this[n] = this[n] * a;
+	}
+].extend(Array);
+	
+[
+	function getJulian() {
+		return Math.ceil((this / 86400000) - (this.getTimezoneOffset()/1440) + 2440587.5);
+	}
+].extend(Date);
+	
