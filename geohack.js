@@ -361,7 +361,7 @@ var HACK = module.exports = {
 			fileID 
 				? "INSERT INTO app.events SELECT evcache.*,voxels.ID AS voxelID FROM app.evcache " 
 						+ "LEFT JOIN app.voxels ON MBRcontains(voxels.Ring,evcache.Point) AND "
-						+ "evcache.z BETWEEN voxels.minAlt AND voxels.maxAlt WHERE ? HAVING voxelID"
+						+ "evcache.z BETWEEN voxels.minAlt AND voxels.maxAlt WHERE ?"
 
 				: "INSERT INTO app.events SELECT *,0 AS voxelID FROM app.evcache WHERE ?" ,
 			{"evcache.fileID":fileID},
@@ -426,7 +426,7 @@ var HACK = module.exports = {
 								u: ev.u || 0,		// current state 
 								fileID: fileID		// source file
 							},
-							toPoint( [ev.x || 0, ev.y || 0] )
+							toPoint( [ev.x || 0, ev.y || 0] ) 
 						] );
 					}
 					
