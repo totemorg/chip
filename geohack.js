@@ -9,49 +9,20 @@
  * @requires enum
  * @requires atomic
  */
-var
-	ENV = process.env;  //< globals
+var   // globals
+	ENV = process.env; 
 
-var
-	FS = require("fs"), //< nodejs
+var	// nodejs
+	FS = require("fs"), 
 	CP = require("child_process"),
+	STREAM = require("stream"),
 	CRYPTO = require("crypto");
 
-const { Copy,Each,Log } = require("enum");
-
-var
-	/*
-	ENUM = require("enum").extend({  // forecasting support methods
-		String: [
-			function tagQuery(where) {
-				if (where)
-					if (where.constructor == String)
-						return this + " AND " + where;
-					else
-						return this + " AND LEAST(?,1)";
-				else
-					return this + "";
-			}
-		],
-
-		Array: [
-			function sample() {
-				return this[ floor( random() * this.length ) ];
-			},
-			
-			function scale(a) {
-				for (var n=0, N=this.length; n<N; n++) this[n] = this[n] * a;
-			}
-		]
-	}),*/
+var  // totem
 	ATOM = require("atomic"),
-	STREAM = require("stream"),
 	LWIP = ATOM.plugins.LWIP;
 
-/*
-Date.prototype.getJulian = function() {
-  return Math.ceil((this / 86400000) - (this.getTimezoneOffset()/1440) + 2440587.5);
-}  */
+const { Copy,Each,Log } = require("enum");
 
 var HACK = module.exports = {
 	
@@ -170,7 +141,7 @@ var HACK = module.exports = {
 												cb({
 													File: file,
 													Voxel: voxel,
-													Events: sql.format(get.events, [where,limit,offset] ),  // add pipe.tmin tmax parms
+													Events: sql.format(get.events, [where,limit,offset] ), 
 													Flux: flux,
 													Collects: collects,
 													Chip: chip
