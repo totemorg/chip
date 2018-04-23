@@ -411,10 +411,10 @@ var HACK = module.exports = {
 				}
 			});
 		
-		sql.beginBulk();
-		
 		sql.query("DELETE FROM app.evcache WHERE ?", {fileID: fileID});
 		sql.query("DELETE FROM app.events WHERE ?", {fileID: fileID});
+		
+		sql.beginBulk();
 		
 		sink
 			.on("finish", function () {
