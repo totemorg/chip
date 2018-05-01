@@ -418,13 +418,14 @@ var HACK = module.exports = {
 		
 		sink
 			.on("finish", function () {
+			
 				sql.endBulk();
 
 				//Trace(`INGEST ${ingested} EVENTS FROM FILE${fileID}`);
 
 				if ( ingested )  // callback if there were ingested events
 					HACK.ingestCache(sql, fileID, function (aoi) {
-						//Log("ingest aoi", aoi);
+						//Log("ingest cb", cb);
 						cb(aoi);
 
 						var
@@ -443,6 +444,7 @@ var HACK = module.exports = {
 								Samples: aoi.Samples,
 								Voxels: aoi.Voxels,
 								Rejects: aoi.Rejects,
+								Relevance: 1 - aoi.Rejects / aoi.Samples,
 								Graded: false,
 								Pruned: false,
 								Archived: false
