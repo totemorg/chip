@@ -215,7 +215,7 @@ var HACK = module.exports = {
 					events: `SELECT ${fields} FROM app.events WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
 					chips: `SELECT ${group} FROM app.events GROUP BY ${group} `,
 					voxels: "SELECT * FROM app.voxels WHERE ?", 
-					files: "SELECT * FROM app.files WHERE ?"
+					files: "SELECT * FROM app.files WHERE least(?,1)"
 				},
 				regmsg = `REG ${src}`;
 
@@ -259,7 +259,8 @@ var HACK = module.exports = {
 
 						});
 					*/
-					sql.forEach( regmsg,  get.files, {Name: src}, function (file) {  // regulate requested file(s)
+
+					sql.forEach( regmsg, get.files, src.toQuery(sql), function (file) {  // regulate requested file(s)
 
 						where.fileID = file.ID;
 
