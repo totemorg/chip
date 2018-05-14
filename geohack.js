@@ -444,8 +444,8 @@ var HACK = module.exports = {
 								Actors: aoi.Actors,
 								Samples: aoi.Samples,
 								Voxels: aoi.Voxels,
-								Rejects: aoi.Rejects,
-								Relevance: 1 - aoi.Rejects / aoi.Samples,
+								Rejects: 0,
+								Relevance: 0,
 								Graded: false,
 								Pruned: false,
 								Archived: false
