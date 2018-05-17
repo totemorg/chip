@@ -137,18 +137,25 @@ var HACK = module.exports = {
 											[ {chipID: voxel.chipID, Name:"aoi"} ], function (voxel) {
 
 												where.voxelID = voxel.ID;
-												
-												cb({
-													File: file,
-													Voxel: voxel,
-													Events: sql.format(get.events, [where,limit,offset] ), 
-													Flux: flux,
-													Collects: collects,
-													Chip: chip
-												});
 
-												if (hypo) {  // test chipID if over ground truth site then start a ROC workflow
-												}
+												sql.forFirst( // get stats on this file-voxel pair
+													"REG",
+													"SELECT * FROM app.stats WHERE least(?)", 
+													[ {fileID: file.ID, voxelID: voxel.ID} ], function (stats) {
+													
+													cb({
+														File: file,
+														Voxel: voxel,
+														Events: sql.format(get.events, [where,limit,offset] ), 
+														Flux: flux,
+														Stats: stats,
+														Collects: collects,
+														Chip: chip
+													});
+
+													if (hypo) {  // test chipID if over ground truth site then start a ROC workflow
+													}
+												});
 											});	
 
 									});
@@ -194,12 +201,19 @@ var HACK = module.exports = {
 						chipVoxels( "", pipe.voi, soi, aoi );
 				}
 				
-				else  { // pull all events
-					cb({ 
-						Events: sql.format(get.events, [where,limit,offset] ),
-						File: file
+				else   // pull all events
+					sql.forFirst( // get stats on this file-voxel pair
+						"REG",
+						"SELECT * FROM app.stats WHERE least(?)", 
+						[ {fileID: file.ID, voxelID: 0} ], function (stats) {
+							
+							Log(">>>stats", stats);
+							cb({ 
+								Events: sql.format(get.events, [where,limit,offset] ),
+								File: file,
+								Stats: stats
+							});
 					});
-				}
 			}
 			
 			var 
