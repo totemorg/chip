@@ -194,11 +194,12 @@ var HACK = module.exports = {
 						chipVoxels( "", pipe.voi, soi, aoi );
 				}
 				
-				else  // pull all events
+				else  { // pull all events
 					cb({ 
 						Events: sql.format(get.events, [where,limit,offset] ),
 						File: file
 					});
+				}
 			}
 			
 			var 
