@@ -207,7 +207,7 @@ var HACK = module.exports = {
 						"SELECT * FROM app.stats WHERE least(?)", 
 						[ {fileID: file.ID, voxelID: 0} ], function (stats) {
 							
-							Log(">>>stats", stats);
+							//Log(">>>stats", stats);
 							cb({ 
 								Events: sql.format(get.events, [where,limit,offset] ),
 								File: file,
@@ -865,6 +865,8 @@ var HACK = module.exports = {
 		
 		var now = new Date();
 		
+		const {max} = Math;
+		
 		HACK.chipAOI(sql, aoicase, function (chip) {
 
 			Log("make voxels above", chip.ID);
@@ -876,6 +878,7 @@ var HACK = module.exports = {
 					minAlt: alt,
 					maxAlt: alt+aoicase.voxelDepth,
 					chipID: chip.ID,
+					radius: max(chip.lat.dim, chip.lon.dim)/2,
 					added: now,
 					minSNR: 0
 				}, chip.ring, chip.point] );
