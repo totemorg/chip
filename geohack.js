@@ -1039,18 +1039,7 @@ AOI interface
 
 function AOI( ring,chipFeatures,chipPixels,chipDim,overlap,r ) {  // build an AOI over a ring to accmodate specifed chip
 
-	var 
-		cos = Math.cos,
-		acos = Math.acos,
-		sin = Math.sin,
-		asin = Math.asin,
-		pow = Math.pow,
-		random = Math.random,
-		round = Math.round,
-		floor = Math.floor,
-		min = Math.min,
-		max = Math.max,
-		sqrt = Math.sqrt;
+	const {cos, acos, sin, asin, pow, random, round, floor, min, max, sqrt, PI} = Math;
 
 	/*
 	Haversine functions to compute arc length on sphere of radius r
@@ -1082,14 +1071,14 @@ function AOI( ring,chipFeatures,chipPixels,chipDim,overlap,r ) {  // build an AO
 		//r = aoi.r = 6137, 								// earth radius [km]
 		featureDim = aoi.featureDim = chipDim / chipFeatures;   // feature dim [m]
 	
-	if (r)  // curved earth
+	if (r)   // curved earth
 		var
 			//chipDim = aoi.chipDim = chipFeatures * featureDim/1000,			// chip dimension [km]
-			du = aoi.du = 2*pow(sin( (chipDim/1000) / (2*r) ),2), // angle formed
+			du = aoi.du = 2*sin( (chipDim/1000) / (2*r) ) ** 2, // angle formed
 			dlon = acos(1 - du), 							// delta lon to keep chip height = chip width = chipDim
-			dlat = acos(1 - du / pow(cos(lat),2)); 	// delta lat to keep chip height = chip width = chipDim
+			dlat = acos( 1 - du / cos(lat) ** 2 ); 	// delta lat to keep chip height = chip width = chipDim
 	
-	else  // flat earth
+	else   // flat earth
 		var
 			du = aoi.du = featureDim/c,	// [ "degs" -> "rads" ]
 			dlon = du,
