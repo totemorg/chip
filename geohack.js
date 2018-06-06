@@ -57,6 +57,34 @@ var HACK = module.exports = {
 		}
 	},				
 	
+	ringRadius: function (ring) {
+		/*
+		Haversine functions to compute arc length on sphere of radius r
+		*/
+		const {cos,sin,asin,sqrt,PI} = Math;
+		
+		function hsine(theta) { return (1-cos(theta))/2; }  // havesine between two anchors subtending angle theta
+		function ahsine(h12) { return 2 * asin(sqrt(h12)); }
+		function hdist(h12,r) { return r * ahsine(h12); }
+		function hsine2(lat,lon) {   // between 2 pts on great circle
+			var
+				dlat = lat[1] - lat[0],
+				dlon = lon[1] - lon[0];
+			
+			return hsine(dlat) + cos(lat[0]) * cos(lat[1]) * hsine(dlon);
+		}  
+
+		var 
+			c = PI / 180,
+			TL = ring[0][0], // top-left corner
+			BR = ring[0][2], // bottom-right corner
+			lat = [ c*TL.y, c*BR.y ],  // [from, to] in [rads]
+			lon = [ c*TL.x, c*BR.x ],  // [from, to] in [rads]
+			h12 = hsine2(lat,lon);
+		
+		return hdist(h12, 6137)/2; //  [km]
+	},
+	
 	chipEvents: function ( sql, pipe, cb ) {  //< callback cb(job) where job is event getter hash
 		
 		function chipJob( pipe ) {
@@ -74,7 +102,7 @@ var HACK = module.exports = {
 					
 					sql.forEach(  // pull all voxels falling over specified aoi and stack them by chipID
 						"REG", 
-						"SELECT ID,Point,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID", 
+						"SELECT ID,Anchor,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID", 
 						[ toPolygon(ring), Copy(voi || {}, {Class:hypo}) ], function (voxel) {
 
 							sql.cache({  // determine sensor collects at chip under this voxel
@@ -98,16 +126,16 @@ var HACK = module.exports = {
 								sql.cache({
 									key: {
 										Name1: "chip", 
-										x1: voxel.Point.x, 
-										x2: voxel.Point.y,
+										x1: voxel.Anchor.x, 
+										x2: voxel.Anchor.y,
 										t: 0
 									},
 									parms: { 
 										path: `./public/images/chips/${voxel.chipID}.jpeg`,
 										bbox: toBBox( Ring ),
 										ring: toPolygon( Ring ),
-										lat: voxel.Point.x,
-										lon: voxel.Point.y
+										lat: voxel.Anchor.x,
+										lon: voxel.Anchor.y
 									},
 									default: {
 										path: (collects[0] || {url: "./shares/spoof.jpg"}).url									
@@ -118,13 +146,13 @@ var HACK = module.exports = {
 									sql.cache({  // get solar flux information at this chip
 										key: {
 											Name1: "flux", 
-											x1: voxel.Point.x, 
-											x2: voxel.Point.y,
+											x1: voxel.Anchor.x, 
+											x2: voxel.Anchor.y,
 											t: 0
 										},
 										parms: { 
-											lat: voxel.Point.x,
-											lon: voxel.Point.y,
+											lat: voxel.Anchor.x,
+											lon: voxel.Anchor.y,
 											tod: new Date()
 										},
 										default: null,
@@ -244,7 +272,7 @@ var HACK = module.exports = {
 
 							//Log({save:dets});
 							sql.query(
-								"REPLACE INTO ??.chips SET ?,Ring=GeomFromText(?),Point=GeomFromText(?)", [ 
+								"REPLACE INTO ??.chips SET ?,Ring=GeomFromText(?),Anchor=GeomFromText(?)", [ 
 									group, {
 										Thread: job.thread,
 										Save: JSON.stringify(dets),
@@ -253,13 +281,13 @@ var HACK = module.exports = {
 										y: chip.pos.lon
 									},
 									chip.ring,
-									chip.point
+									chip.anchor
 							]);
 
 							// reserve voxel detectors above this chip
 							for (var vox=HACK.voxelSpecs,alt=vox.minAlt, del=vox.deltaAlt, max=vox.maxAlt; alt<max; alt+=del) 
 								sql.query(
-									"REPLACE INTO ??.voxels SET ?,Ring=GeomFromText(?),Point=GeomFromText(?)", [
+									"REPLACE INTO ??.voxels SET ?,Ring=GeomFromText(?),Anchor=GeomFromText(?)", [
 									group, {
 										Thread: job.thread,
 										Save: null,
@@ -269,7 +297,7 @@ var HACK = module.exports = {
 										z: alt
 									},
 									chip.ring,
-									chip.point
+									chip.anchor
 								]);
 
 						});
@@ -347,18 +375,18 @@ var HACK = module.exports = {
 			"INGEST",
 			fileID 
 				? "INSERT INTO app.events SELECT evcache.*,voxels.ID AS voxelID FROM app.evcache " 
-						+ "LEFT JOIN app.voxels ON MBRcontains(voxels.Ring,evcache.Point) AND "
+						+ "LEFT JOIN app.voxels ON MBRcontains(voxels.Ring,evcache.Anchor) AND "
 						+ "evcache.z BETWEEN voxels.minAlt AND voxels.maxAlt WHERE ?"
 
 				: "INSERT INTO app.events SELECT *,0 AS voxelID FROM app.evcache WHERE ?" ,
 			{"evcache.fileID":fileID},
-			function (info) {
+			function (ingest) {
 				
 			sql.forFirst(
 				"INGEST",
 				
 				"SELECT "
-				+ "? AS Voxels, "
+				+ "? AS Voxelized, "
 				+ "min(x) AS xMin, max(x) AS xMax, "
 				+ "min(y) AS yMin, max(y) AS yMax, "
 				+ "min(z) AS zMin, max(z) AS zMax, "
@@ -369,7 +397,7 @@ var HACK = module.exports = {
 				+ "count(id) AS Samples "
 				+ "FROM app.evcache WHERE ?", 
 				
-				[ info.affectedRows, {fileID:fileID} ],	cb);
+				[ iningestfo.affectedRows, {fileID:fileID} ],	cb);
 				
 				/*
 				function (aoi) {
@@ -403,7 +431,7 @@ var HACK = module.exports = {
 						//Log(ingested,ev);
 						
 						sql.query(
-							"INSERT INTO app.evcache SET ?, Point=GeomFromText(?)", [{
+							"INSERT INTO app.evcache SET ?, Anchor=GeomFromText(?)", [{
 								s: ev.s || 0, 		// time step 
 								x: ev.x || 0,		// lon [degs]
 								y: ev.y || 0,		// lat [degs]
@@ -453,18 +481,16 @@ var HACK = module.exports = {
 
 						sql.forAll(  // update file with aoi info
 							"INGEST",
-							"UPDATE app.files SET ?, Ring=GeomFromText(?) WHERE ?", [{ 
+							"UPDATE app.files SET ?, Samples=Samples+?, Rejects=Rejects+?, Relevance=1-Rejects/Samples, Ring=GeomFromText(?) WHERE ?", [{ 
 								States: aoi.States,
 								Steps: aoi.Steps,
 								Actors: aoi.Actors,
-								Samples: aoi.Samples,
-								Voxels: aoi.Voxels,
-								Rejects: 0,
-								Relevance: 0,
 								Graded: false,
 								Pruned: false,
 								Archived: false
 							},
+							aoi.Voxelized,
+							aoi.Samples - aoi.Voxelized,
 							toPolygon( Ring ), 
 							{ID: fileID} 
 						]);
@@ -865,7 +891,7 @@ var HACK = module.exports = {
 		
 		var now = new Date();
 		
-		const {max} = Math;
+		const {sqrt} = Math;
 		
 		HACK.chipAOI(sql, aoicase, function (chip) {
 
@@ -873,15 +899,15 @@ var HACK = module.exports = {
 
 			for (var alt=0, n=0; n<aoicase.voxelCount; n++,alt+=aoicase.voxelDepth)  { // define voxels above this chip
 				sql.query(
-					"INSERT INTO app.voxels SET ?, Ring=GeomFromText(?), Point=GeomFromText(?)", [{
+					"INSERT INTO app.voxels SET ?, Ring=GeomFromText(?), Anchor=GeomFromText(?)", [{
 					class: aoicase.Name,
 					minAlt: alt,
 					maxAlt: alt+aoicase.voxelDepth,
 					chipID: chip.ID,
-					radius: max(chip.lat.dim, chip.lon.dim)/2,
+					radius: sqrt(chip.lat.dim**2 + chip.lon.dim**2),
 					added: now,
 					minSNR: 0
-				}, chip.ring, chip.point] );
+				}, chip.ring, chip.anchor] );
 
 				//if (!alt) Log(chip.ring);
 				//if (!alt) Log(q);
@@ -1045,11 +1071,18 @@ function AOI( ring,chipFeatures,chipPixels,chipDim,overlap,r ) {  // build an AO
 	Haversine functions to compute arc length on sphere of radius r
 	*/
 
-	function hsine(t12) { return (1-cos(t12))/2; }  // havesine between two points subtending angle t12
+	/*
+	function hsine(theta) { return (1-cos(theta))/2; }  // havesine between two anchors subtending angle theta
 	function ahsine(h12) { return 2 * asin(sqrt(h12)); }
 	function hdist(h12,r) { return r * ahsine(h12); }
-	function hsine2 (lat,lon) { return hsine(lat[1]-lat[0]) + cos( lat[1] ) * cos( lat[0] ) * hsine(lon[1]-lon[0]); }  // between 2 pts on great circle
+	function hsine2(lat,lon) {   // between 2 pts on great circle
+		var
+			dlat = lat[1] - lat[0],
+			dlon = lon[1] - lon[0];
 
+		return hsine(dlat) + cos(lat[0]) * cos(lat[1]) * hsine(dlon);
+	}  */ 
+	
 	/*
 	lat-lon ranges
 	*/
@@ -1084,12 +1117,12 @@ function AOI( ring,chipFeatures,chipPixels,chipDim,overlap,r ) {  // build an AO
 			dlon = du,
 			dlat = du;
 		
-	// curved earth note: dlat -> inf when lat -> +/- 90 ie when at the poles.  Stay off the poles!
+	// curved surface note: dlat -> inf when lat -> +/- 90 ie when at the poles.  Stay off the poles!
 	
 	//console.log({aoi:ring,number_of_features:chipFeatures,number_of_samples:chipPixels,chipDim:chipDim,
 	// featureDim:featureDim,lat:lat,lon:lon,dels: [dlat,dlon], ol:ol});	
 	
-	aoi.r = r; // earth radius [km] 0 implies flat
+	aoi.r = r; // surface radius [km] 0 implies flat  6137 km for earth
 	
 	//Log("aoi", aoi.r, du, dlon, dlat);
 	
@@ -1187,7 +1220,7 @@ function CHIP(aoi) {
 		ring = [TLd, BLd, BRd, TRd, TLd];
 		
 	this.bbox = toBBox( ring ); // [TLd[0], TLd[1], BRd[0], BRd[1]];   // [min lon,lat, max lon,lat]  degs
-	this.point = toPoint(TLd);
+	this.anchor = toPoint(TLd);
 	this.ring = toPolygon( ring );
 
 	if (this.r)  // curved earth model
@@ -1508,7 +1541,7 @@ if (args = null)
 		}
 	});
 
-function toPolygon(ring) {  // [ [lon,lat], ... ] degs
+function toPolygon(ring) {  // [ [lon,lat], ... ] degs --> POLYGON(( lon lat, ... )) degs
 	return 'POLYGON((' + [  
 		ring[0].join(" "),
 		ring[1].join(" "),
@@ -1517,11 +1550,11 @@ function toPolygon(ring) {  // [ [lon,lat], ... ] degs
 		ring[0].join(" ") ].join(",") +'))' ;
 }
 
-function toPoint( u ) {  // [lon,lat] degs
+function toPoint( u ) {  // [lon,lat] degs --> POINT(lon,lat) degs
 	return 	`POINT(${u[0]} ${u[1]})`;
 }
 
-function toBBox(poly) {  // [ [lon,lat], ...] degs
+function toBBox(poly) {  // [ [lon,lat], ...] degs --> [TLlon, TLlat, BRlon, BRlat] degs
 	var 
 		TL = poly[0],
 		BR = poly[2],
@@ -1530,7 +1563,7 @@ function toBBox(poly) {  // [ [lon,lat], ...] degs
 	return bbox.join(",");
 }
 	
-function toRing(poly) {
+function toRing(poly) {  // [ {x,y}, ...] degs --> [ [lon,lat], ...] degs 
 	var rtn = [];
 	poly[0].forEach( function (pt) {
 		rtn.push( [pt.x, pt.y] );
