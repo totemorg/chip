@@ -375,10 +375,10 @@ var HACK = module.exports = {
 			"INGEST",
 			fileID 
 				? "INSERT INTO app.events SELECT evcache.*,voxels.ID AS voxelID FROM app.evcache " 
-						+ "LEFT JOIN app.voxels ON MBRcontains(voxels.Ring,evcache.Anchor) AND "
-						+ "evcache.z BETWEEN voxels.minAlt AND voxels.maxAlt WHERE ?"
+						+ "LEFT JOIN app.voxels ON MBRcontains(voxels.Ring,point(evcache.x,evcache.y)) AND "
+						+ "evcache.z BETWEEN voxels.x AND voxels.z+voxels.height WHERE ?"
 
-				: "INSERT INTO app.events SELECT *,0 AS voxelID FROM app.evcache WHERE ?" ,
+				: "INSERT INTO app.events SELECT *, 0 AS voxelID FROM app.evcache WHERE ?" ,
 			{"evcache.fileID":fileID},
 			function (ingest) {
 				
@@ -397,7 +397,7 @@ var HACK = module.exports = {
 				+ "count(id) AS Samples "
 				+ "FROM app.evcache WHERE ?", 
 				
-				[ iningestfo.affectedRows, {fileID:fileID} ],	cb);
+				[ ingest.affectedRows, {fileID:fileID} ],	cb);
 				
 				/*
 				function (aoi) {
@@ -431,17 +431,18 @@ var HACK = module.exports = {
 						//Log(ingested,ev);
 						
 						sql.query(
-							"INSERT INTO app.evcache SET ?, Anchor=GeomFromText(?)", [{
-								s: ev.s || 0, 		// time step 
+							//"INSERT INTO app.evcache SET ?, Anchor=GeomFromText(?)", [{
+							"INSERT INTO app.evcache SET ?", [{
 								x: ev.x || 0,		// lon [degs]
 								y: ev.y || 0,		// lat [degs]
 								z: ev.z || 0,		// alt [m]
 								t: ev.t || 0,		// sample time
-								n: ev.n || 0,		// unqiue id 
-								u: ev.u || 0,		// current state 
+								//s: ev.s || 0, 		// time step 
+								actorID: ev.actor || 0,		// unqiue id 
+								stateID: ev.state || 0,		// current state 
 								fileID: fileID		// source file
-							},
-							toPoint( [ev.x || 0, ev.y || 0] ) 
+							}
+							//toPoint( [ev.x || 0, ev.y || 0] ) 
 						] );
 					}
 					
@@ -485,8 +486,8 @@ var HACK = module.exports = {
 								States: aoi.States,
 								Steps: aoi.Steps,
 								Actors: aoi.Actors,
-								Graded: false,
-								Pruned: false,
+								//Graded: false,
+								//Pruned: false,
 								Archived: false
 							},
 							aoi.Voxelized,
@@ -899,15 +900,23 @@ var HACK = module.exports = {
 
 			for (var alt=0, n=0; n<aoicase.voxelCount; n++,alt+=aoicase.voxelDepth)  { // define voxels above this chip
 				sql.query(
-					"INSERT INTO app.voxels SET ?, Ring=GeomFromText(?), Anchor=GeomFromText(?)", [{
+					//"INSERT INTO app.voxels SET ?, Ring=GeomFromText(?), Anchor=GeomFromText(?)", [{
+					"INSERT INTO app.voxels SET ?, Ring=GeomFromText(?)", [{
 					class: aoicase.Name,
-					minAlt: alt,
-					maxAlt: alt+aoicase.voxelDepth,
+					x: chip.lon,
+					y: chip.lat,
+					z: alt,
+					length: chip.width,
+					width: chip.height,
+					height: aoicase.voxelDepth,
 					chipID: chip.ID,
-					radius: sqrt(chip.lat.dim**2 + chip.lon.dim**2),
+					radius: sqrt(chip.width**2 + chip.height**2),
 					added: now,
 					minSNR: 0
-				}, chip.ring, chip.anchor] );
+				}, 
+					chip.ring, 
+					//chip.anchor
+				] );
 
 				//if (!alt) Log(chip.ring);
 				//if (!alt) Log(q);
@@ -966,7 +975,7 @@ function SOLAR(day,tod,tz,lat,lon) {
 	function atan2(x,y) { return R2D * Math.atan2(x,y); }  // was atan2(x)
 	function asin(x) { return R2D * Math.asin(x); }
 	function acos(x) { return R2D * Math.acos(x); }
-	function pow(x,a) { return Math.pow(x,a); }
+	//function pow(x,a) { return Math.pow(x,a); }
 	
 	this.day = day;
 	this.tod = tod;  // local time of day [hours past midnight]
@@ -991,7 +1000,8 @@ function SOLAR(day,tod,tz,lat,lon) {
 		oc = this.oc = moe + 0.00256 * cos(125.04 - 1934.136*jcen),  // obliq correction [deg]
 		sra = this.sra = atan2( cos(sal), cos(oc) * sin(sal) ),  // sun right ascention [deg]
 		sde = this.sde = asin( sin(oc) * sin(sal)),  // sun declination [deg]
-		vary = this.vary = pow( tan( oc/2 ), 2),   // var y
+		//vary = this.vary = pow( tan( oc/2 ), 2),   // var y
+		vary = this.vary = tan( oc/2 ) ** 2,   // var y
 		eot = this.eot = 4*R2D*( vary * // equation of time [min]
 					  sin(2*gml) 
 					  - 2*eeo * sin(gma)
@@ -1015,7 +1025,8 @@ function SOLAR(day,tod,tz,lat,lon) {
 				(ha > 85)  // approx atm refractive index
 					? 0
 					: (sea > 5) 
-						? 58.1/tan(sea) - 0.07/pow(tan(sea),3) + 0.000086/pow(tan(sea),5)
+						//? 58.1/tan(sea) - 0.07/pow(tan(sea),3) + 0.000086/pow(tan(sea),5)
+						? 58.1/tan(sea) - 0.07/tan(sea)**3 + 0.000086/tan(sea)**5
 						: (sea  > -0.575)
 							? 1735 + sza*(-518.2 + sea*(103.4 + sea*(-12.79 + sea*0.7111)))
 							: -20.772 / tan(sea) 
@@ -1065,7 +1076,7 @@ AOI interface
 
 function AOI( ring,chipFeatures,chipPixels,chipDim,overlap,r ) {  // build an AOI over a ring to accmodate specifed chip
 
-	const {cos, acos, sin, asin, pow, random, round, floor, min, max, sqrt, PI} = Math;
+	const {cos, acos, sin, asin, random, round, floor, min, max, sqrt, PI} = Math;
 
 	/*
 	Haversine functions to compute arc length on sphere of radius r
@@ -1184,7 +1195,7 @@ function CHIP(aoi) {
 		cos = Math.cos,
 		acos = Math.acos,	
 		eps = {pos: 0.00001, scale:0.01},
-		pow = Math.pow,		
+		//pow = Math.pow,		
 		lat = aoi.lat,  // [rads]
 		lon = aoi.lon,  // [rads]
 		c = aoi.c,
@@ -1220,7 +1231,9 @@ function CHIP(aoi) {
 		ring = [TLd, BLd, BRd, TRd, TLd];
 		
 	this.bbox = toBBox( ring ); // [TLd[0], TLd[1], BRd[0], BRd[1]];   // [min lon,lat, max lon,lat]  degs
-	this.anchor = toPoint(TLd);
+	//this.anchor = toPoint(TLd);
+	this.lon = TLd[0];  // [degs]
+	this.lat = TLd[1]; 	// [degs]
 	this.ring = toPolygon( ring );
 
 	if (this.r)  // curved earth model
@@ -1233,7 +1246,8 @@ function CHIP(aoi) {
 			lon.val = lon.min;
 			lon.idx = 0;
 			lat.val += lat.del * (1-lat.ol);  // + fixed to *
-			lat.del = acos(1 - aoi.du/pow(cos(lat.val),2));
+			//lat.del = acos(1 - aoi.du/pow(cos(lat.val),2));
+			lat.del = acos(1 - aoi.du / cos(lat.val) ** 2);
 			lat.idx++;
 		}
 
@@ -1554,7 +1568,7 @@ function toPoint( u ) {  // [lon,lat] degs --> POINT(lon,lat) degs
 	return 	`POINT(${u[0]} ${u[1]})`;
 }
 
-function toBBox(poly) {  // [ [lon,lat], ...] degs --> [TLlon, TLlat, BRlon, BRlat] degs
+function toBBox(poly) {  // [ [lon,lat], ...] degs --> [TL.lon, TL.lat, BR.lon, BR.lat] degs
 	var 
 		TL = poly[0],
 		BR = poly[2],
