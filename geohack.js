@@ -85,111 +85,135 @@ var HACK = module.exports = {
 		return hdist(h12, 6137)/2; //  [km]
 	},
 	
-	chipEvents: function ( sql, pipe, cb ) {  //< callback cb(job) where job is event getter hash
+	chipEvents: function ( sql, pipe, cb ) {  // callback cb(meta)
+		function getMeta( aoi, soi, file, voxel, cb ) {
+			
+			var
+				makeChip = HACK.make.chip,
+				makeFlux = HACK.make.flux,
+				makeCollects = HACK.make.collects;
+
+			sql.cache({  // determine sensor collects at chip under this voxel
+				key: {
+					Name1: "collects", 
+					Index1: voxel.chipID,
+					Name1: JSON.stringify(soi),
+					t: 0
+				},
+				parms: Copy(soi, { 
+					ring: aoi
+				}),
+				default: [],
+				make: makeCollects
+			}, function (collects) {
+
+				//Log(voxel.Ring, collects);
+				var
+					Ring = toRing( voxel.Ring );
+
+				sql.cache({
+					key: {
+						Name1: "chip", 
+						x1: voxel.lon, 
+						x2: voxel.lat,
+						t: 0
+					},
+					parms: { 
+						path: `./public/images/chips/${voxel.chipID}.jpeg`,
+						bbox: toBBox( Ring ),
+						ring: toPolygon( Ring ),
+						lat: voxel.lat,
+						lon: voxel.lon
+					},
+					default: {
+						path: (collects[0] || {url: "./shares/spoof.jpg"}).url									
+					},
+					make: makeChip
+				}, function (chip) {
+
+					sql.cache({  // get solar flux information at this chip
+						key: {
+							Name1: "flux", 
+							x1: voxel.lon, 
+							x2: voxel.lat,
+							t: 0
+						},
+						parms: { 
+							lat: voxel.lat,
+							lon: voxel.lon,
+							tod: new Date()
+						},
+						default: null,
+						make: makeFlux
+					}, function (flux) {
+
+						sql.forEach( // get all voxels above this chip
+							"REG",
+							"SELECT * FROM app.voxels WHERE ?",
+							[ {chipID: voxel.chipID} ], function (voxel) {
+
+								where.voxelID = voxel.ID;
+
+								sql.forFirst( // get stats on this file-voxel pair
+									"REG",
+									"SELECT * FROM app.stats WHERE least(?)", 
+									[ {fileID: file.ID, voxelID: voxel.ID} ], function (stats) {
+
+									cb({
+										File: file,
+										Voxel: voxel,
+										Events: sql.format(get.events, [where,limit,offset] ), 
+										Flux: flux,
+										Stats: stats,
+										Collects: collects,
+										Chip: chip
+									});
+
+									/*if (hypo) {  // test chipID if over ground truth site then start a ROC workflow
+									} */
+								}); 
+							});	
+
+					});
+				});
+
+			});
+		}
+			
+		HACK.chip( sql, pipe, function ( aoi, soi, file, voxel ) {
+			getMeta( aoi, soi, file, voxel, function (meta) {
+				cb(meta);
+			});
+		});
+	},
+	
+	chip: function ( sql, pipe, cb ) {  //< callback cb(aoi,soi,file,voxel) 
+		
+		function toQuery(q) {
+			if (typeof q == "string") {
+				var 
+					query = {},
+					path = q.toQuery(query);
+			
+				return path ? Copy({Name:path}, query) : query;
+			}
+			
+			else
+				return q || {};
+		}
 		
 		function chipJob( pipe ) {
 
 			function chipFile( file ) { 
 				
-				function chipVoxels( hypo, voi, soi, ring) {
-				
-					var
-						makeChip = HACK.make.chip,
-						makeFlux = HACK.make.flux,
-						makeCollects = HACK.make.collects;
-
-					Log("chip with hypo/voxel class", hypo );
+				function chipVoxels( aoi, voi, soi) {
+					Log("chip voxels", aoi, voi, soi );
 					
 					sql.forEach(  // pull all voxels falling over specified aoi and stack them by chipID
 						"REG", 
-						"SELECT ID,Anchor,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID", 
-						[ toPolygon(ring), Copy(voi || {}, {Class:hypo}) ], function (voxel) {
-
-							sql.cache({  // determine sensor collects at chip under this voxel
-								key: {
-									Name1: "collects", 
-									Index1: voxel.chipID,
-									Name1: JSON.stringify(soi),
-									t: 0
-								},
-								parms: Copy(soi, { 
-									ring: ring
-								}),
-								default: [],
-								make: makeCollects
-							}, function (collects) {
-
-								//Log(voxel.Ring, collects);
-								var
-									Ring = toRing( voxel.Ring );
-								
-								sql.cache({
-									key: {
-										Name1: "chip", 
-										x1: voxel.Anchor.x, 
-										x2: voxel.Anchor.y,
-										t: 0
-									},
-									parms: { 
-										path: `./public/images/chips/${voxel.chipID}.jpeg`,
-										bbox: toBBox( Ring ),
-										ring: toPolygon( Ring ),
-										lat: voxel.Anchor.x,
-										lon: voxel.Anchor.y
-									},
-									default: {
-										path: (collects[0] || {url: "./shares/spoof.jpg"}).url									
-									},
-									make: makeChip
-								}, function (chip) {
-
-									sql.cache({  // get solar flux information at this chip
-										key: {
-											Name1: "flux", 
-											x1: voxel.Anchor.x, 
-											x2: voxel.Anchor.y,
-											t: 0
-										},
-										parms: { 
-											lat: voxel.Anchor.x,
-											lon: voxel.Anchor.y,
-											tod: new Date()
-										},
-										default: null,
-										make: makeFlux
-									}, function (flux) {
-
-										sql.forEach( // get all voxels above this chip
-											"REG",
-											"SELECT * FROM app.voxels WHERE least(?)",
-											[ {chipID: voxel.chipID, Name:"aoi"} ], function (voxel) {
-
-												where.voxelID = voxel.ID;
-
-												sql.forFirst( // get stats on this file-voxel pair
-													"REG",
-													"SELECT * FROM app.stats WHERE least(?)", 
-													[ {fileID: file.ID, voxelID: voxel.ID} ], function (stats) {
-													
-													cb({
-														File: file,
-														Voxel: voxel,
-														Events: sql.format(get.events, [where,limit,offset] ), 
-														Flux: flux,
-														Stats: stats,
-														Collects: collects,
-														Chip: chip
-													});
-
-													if (hypo) {  // test chipID if over ground truth site then start a ROC workflow
-													}
-												});
-											});	
-
-									});
-								});
-						});
-
+						"SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID", 
+						[ toPolygon(aoi), voi ], function (voxel) {
+							cb( aoi, soi, file, voxel );
 					});
 				}
 				
@@ -215,21 +239,14 @@ var HACK = module.exports = {
 					});
 
 				else */
-				if (aoi = pipe.aoi)  { // regulate chips or events through voxels
-					if ( aoi.constructor == String )  // testing hypothesis
-						sql.forEach( "REG", "SELECT Ring FROM app.aois WHERE ?", {Name:aoi}, function (rec) {
-							try {
-								chipVoxels( aoi, pipe.voi, soi, JSON.parse(rec.Ring) );
-							}
-							catch (err) {
-							}
-						});
+				if (aoi.Name)  // regulate chips or events through voxels
+					sql.forEach( "REG", "SELECT Ring FROM app.aois WHERE ?", {Name:aoi.Name}, function (rec) {
+						chipVoxels( JSON.parse(rec.Ring) , voi, soi );
+					});
 
-					else  // not testing a hypothesis
-						chipVoxels( "", pipe.voi, soi, aoi );
-				}
-				
 				else   // pull all events
+					chipVoxels( aoi, voi, soi );
+					/*
 					sql.forFirst( // get stats on this file-voxel pair
 						"REG",
 						"SELECT * FROM app.stats WHERE least(?)", 
@@ -241,7 +258,7 @@ var HACK = module.exports = {
 								File: file,
 								Stats: stats
 							});
-					});
+					}); */
 			}
 			
 			var 
@@ -250,7 +267,9 @@ var HACK = module.exports = {
 				where = pipe.where || {},
 				order = pipe.order || "t",
 				limit = pipe.limit || 1000,
-				soi = pipe.soi || {},
+				soi = toQuery(pipe.soi),
+				aoi = toQuery(pipe.aoi),
+				voi = toQuery(pipe.voi),
 				src = pipe.file || pipe.source || "",
 				fields = "*",
 				offset = pipe.offset || 0, 
@@ -376,7 +395,7 @@ var HACK = module.exports = {
 			fileID 
 				? "INSERT INTO app.events SELECT evcache.*,voxels.ID AS voxelID FROM app.evcache " 
 						+ "LEFT JOIN app.voxels ON MBRcontains(voxels.Ring,point(evcache.x,evcache.y)) AND "
-						+ "evcache.z BETWEEN voxels.x AND voxels.z+voxels.height WHERE ?"
+						+ "evcache.z BETWEEN voxels.alt AND voxels.alt+voxels.height WHERE ?"
 
 				: "INSERT INTO app.events SELECT *, 0 AS voxelID FROM app.evcache WHERE ?" ,
 			{"evcache.fileID":fileID},
@@ -392,8 +411,8 @@ var HACK = module.exports = {
 				+ "min(z) AS zMin, max(z) AS zMax, "
 				// + "min(t) AS tMin, max(t) AS tMax, "
 				+ "max(t)+1 AS Steps, "
-				+ "max(u)+1 AS States, "
-				+ "max(n)+1 AS Actors, "
+				+ "max(stateID)+1 AS States, "
+				+ "max(actorID)+1 AS Actors, "
 				+ "count(id) AS Samples "
 				+ "FROM app.evcache WHERE ?", 
 				
@@ -413,57 +432,64 @@ var HACK = module.exports = {
 		});
 	},
 
-	ingestSink: function (sql, filter, fileID, cb) {  // return sinking stream for piping events with callback cb(aoi) when finished.
-		var 
-			ingested = 0,
-			sink = new STREAM.Writable({
-				objectMode: true,
-				write: function (rec,en,cb) {
-					
-					function cache(ev) {
-						
-						if ( !ingested )   // save first event record as reference
-							sql.query("UPDATE app.files SET ? WHERE ?", [{
-								refEv: JSON.stringify(ev)
-							}, {ID: fileID}] );
-						
-						ingested++;
-						//Log(ingested,ev);
-						
-						sql.query(
-							//"INSERT INTO app.evcache SET ?, Anchor=GeomFromText(?)", [{
-							"INSERT INTO app.evcache SET ?", [{
-								x: ev.x || 0,		// lon [degs]
-								y: ev.y || 0,		// lat [degs]
-								z: ev.z || 0,		// alt [m]
-								t: ev.t || 0,		// sample time
-								//s: ev.s || 0, 		// time step 
-								actorID: ev.actor || 0,		// unqiue id 
-								stateID: ev.state || 0,		// current state 
-								fileID: fileID		// source file
-							}
-							//toPoint( [ev.x || 0, ev.y || 0] ) 
-						] );
-					}
-					
-					if (filter)   // filter the record if filter provided
-						filter(rec, cache);
-
-					else  // no filter so just cache the record
-						cache(rec);
-					
-					cb(null);  // signal no errors
-				}
-			});
-		
+	ingestPipe: function (sql, filter, fileID, src, cb) {  // pipe src event stream with callback cb(aoi) when finished.
 		sql.query("DELETE FROM app.evcache WHERE ?", {fileID: fileID});
 		//sql.query("DELETE FROM app.events WHERE ?", {fileID: fileID});
-		
-		sql.beginBulk();
-		
-		sink
-			.on("finish", function () {
+
+		sql.query("SELECT startTime FROM app.files WHERE ? LIMIT 1", {ID: fileID}, function (err, ref) {
 			
+			var 
+				ingested = 0,
+				refTime = ref[0].startTime,
+				sink = new STREAM.Writable({
+					objectMode: true,
+					write: function (rec,en,cb) {
+
+						function cache(ev) {
+
+							/*
+							if ( !ingested )   // save first event record as reference
+								refTime = ev.t;
+								sql.query("UPDATE app.files SET ? WHERE ?", [{
+									refEv: JSON.stringify(ev)
+									refTime = ev.t
+								}, {ID: fileID}] ); */
+
+							ingested++;
+							//Log(ingested,ev);
+							//Log(refTime, ev.t, ev.t-refTime);
+							
+							sql.query(
+								//"INSERT INTO app.evcache SET ?, Anchor=GeomFromText(?)", [{
+								"INSERT INTO app.evcache SET ?", [{
+									x: ev.x || 0,		// lon [degs]
+									y: ev.y || 0,		// lat [degs]
+									z: ev.z || 0,		// alt [m]
+									t: ev.t - refTime,		// sample time
+									//s: ev.s || 0, 		// time step 
+									actorID: ev.actor || 0,		// unqiue id 
+									stateID: ev.state || 0,		// current state 
+									fileID: fileID		// source file
+								}
+								//toPoint( [ev.x || 0, ev.y || 0] ) 
+							] );
+						}
+
+						if (filter)   // filter the record if filter provided
+							filter(rec, cache);
+
+						else  // no filter so just cache the record
+							cache(rec);
+
+						cb(null);  // signal no errors
+					}
+				});
+		
+			sql.beginBulk();
+		
+			sink
+			.on("finish", function () {
+
 				sql.endBulk();
 
 				//Trace(`INGEST ${ingested} EVENTS FROM FILE${fileID}`);
@@ -486,8 +512,8 @@ var HACK = module.exports = {
 								States: aoi.States,
 								Steps: aoi.Steps,
 								Actors: aoi.Actors,
-								//Graded: false,
-								//Pruned: false,
+								Graded: false,
+								Pruned: false,
 								Archived: false
 							},
 							aoi.Voxelized,
@@ -497,16 +523,18 @@ var HACK = module.exports = {
 						]);
 
 					});
-			
+
 			})
 			.on("error", function (err) {
 				sql.endBulk();
+				Log("INGEST FAILED", err);
 			});
 		
-		return sink;
+			src.pipe(sink);  // start the ingest
+		});
 	},
 	
-	ingestList: function (sql, evs, fileID, cb) { // ingest events list to internal fileID with callback cb(aoi).
+	ingestList: function (sql, evs, fileID, cb) { // ingest events list to internal fileID with callback cb(aoi) when finished.
 	/**
 	@member HACK
 	@private
@@ -526,10 +554,9 @@ var HACK = module.exports = {
 				read: function () {  // return null if there are no more events
 					this.push( evs[n++] || null );
 				}
-			}),
-			sink = HACK.ingestSink(sql, null, fileID, cb);
+			});
 		
-		src.pipe(sink);  // start the ingest
+		HACK.ingestPipe(sql, null, fileID, src, cb);
 	},
 	
 	ingestFile: function (sql, evsPath, fileID, cb) {  // ingest events in evsPath to internal fileID with callback cb(aoi).
@@ -574,10 +601,9 @@ var HACK = module.exports = {
 		}
 		
 		var
-			src = FS.createReadStream(evsPath,"utf8"),
-			sink = HACK.ingestSink(sql, filter, fileID, cb);
-
-		src.pipe(sink); // ingest events into db
+			src = FS.createReadStream(evsPath,"utf8");
+		
+		HACK.ingestPipe(sql, filter, fileID, src, cb);
 	},
 		
 	ingestService: function (url, fetch, chan, cb) {  // ingest events from service channel
@@ -903,9 +929,9 @@ var HACK = module.exports = {
 					//"INSERT INTO app.voxels SET ?, Ring=GeomFromText(?), Anchor=GeomFromText(?)", [{
 					"INSERT INTO app.voxels SET ?, Ring=GeomFromText(?)", [{
 					class: aoicase.Name,
-					x: chip.lon,
-					y: chip.lat,
-					z: alt,
+					lon: chip.lon,
+					lat: chip.lat,
+					alt: alt,
 					length: chip.width,
 					width: chip.height,
 					height: aoicase.voxelDepth,
