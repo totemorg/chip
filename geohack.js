@@ -395,7 +395,7 @@ var HACK = module.exports = {
 			fileID 
 				? "INSERT INTO app.events SELECT evcache.*,voxels.ID AS voxelID FROM app.evcache " 
 						+ "LEFT JOIN app.voxels ON MBRcontains(voxels.Ring,point(evcache.x,evcache.y)) AND "
-						+ "evcache.z BETWEEN voxels.alt AND voxels.alt+voxels.height WHERE ?"
+						+ "evcache.z BETWEEN voxels.alt AND voxels.alt+voxels.height WHERE ? HAVING voxelID"
 
 				: "INSERT INTO app.events SELECT *, 0 AS voxelID FROM app.evcache WHERE ?" ,
 			{"evcache.fileID":fileID},
@@ -462,10 +462,10 @@ var HACK = module.exports = {
 							sql.query(
 								//"INSERT INTO app.evcache SET ?, Anchor=GeomFromText(?)", [{
 								"INSERT INTO app.evcache SET ?", [{
-									x: ev.x || 0,		// lon [degs]
-									y: ev.y || 0,		// lat [degs]
+									x: ev.x || 0,		// lat [degs]
+									y: ev.y || 0,		// lon [degs]
 									z: ev.z || 0,		// alt [m]
-									t: ev.t - refTime,		// sample time
+									t: ev.t,		// sample time
 									//s: ev.s || 0, 		// time step 
 									actorID: ev.actor || 0,		// unqiue id 
 									stateID: ev.state || 0,		// current state 
@@ -508,7 +508,7 @@ var HACK = module.exports = {
 
 						sql.forAll(  // update file with aoi info
 							"INGEST",
-							"UPDATE app.files SET ?, Samples=Samples+?, Rejects=Rejects+?, Relevance=1-Rejects/Samples, Ring=GeomFromText(?) WHERE ?", [{ 
+							"UPDATE app.files SET ?, Samples=Samples+?, Rejects=Rejects+?, Relevance=1-Rejects/Samples WHERE ?", [{ // , Ring=GeomFromText(?)
 								States: aoi.States,
 								Steps: aoi.Steps,
 								Actors: aoi.Actors,
@@ -518,7 +518,7 @@ var HACK = module.exports = {
 							},
 							aoi.Voxelized,
 							aoi.Samples - aoi.Voxelized,
-							toPolygon( Ring ), 
+							//toPolygon( Ring ), 
 							{ID: fileID} 
 						]);
 
@@ -953,7 +953,7 @@ var HACK = module.exports = {
 	
 	chipAOI: function (sql, aoicase, cb) {
 		var
-			ring = aoicase.ring, // [[lon, lat], ...] degs
+			ring = aoicase.ring, // [ [lat, lon], ...] degs
 			chipFeatures = aoicase.chipFeatures, // [ features along edge ]
 			chipPixels = aoicase.chipPixels, // [pixels]
 			featureDim = aoicase.featureLength, // [m]
@@ -1581,7 +1581,7 @@ if (args = null)
 		}
 	});
 
-function toPolygon(ring) {  // [ [lon,lat], ... ] degs --> POLYGON(( lon lat, ... )) degs
+function toPolygon(ring) {  // [ [lat,lon], ... ] degs --> POLYGON(( lat lon, ... )) degs
 	return 'POLYGON((' + [  
 		ring[0].join(" "),
 		ring[1].join(" "),
@@ -1590,20 +1590,20 @@ function toPolygon(ring) {  // [ [lon,lat], ... ] degs --> POLYGON(( lon lat, ..
 		ring[0].join(" ") ].join(",") +'))' ;
 }
 
-function toPoint( u ) {  // [lon,lat] degs --> POINT(lon,lat) degs
+function toPoint( u ) {  // [lat,lon] degs --> POINT(lat,lon) degs
 	return 	`POINT(${u[0]} ${u[1]})`;
 }
 
-function toBBox(poly) {  // [ [lon,lat], ...] degs --> [TL.lon, TL.lat, BR.lon, BR.lat] degs
+function toBBox(ring) {  // [ [lat,lon], ...] degs --> [TL.lon, TL.lat, BR.lon, BR.lat] degs
 	var 
-		TL = poly[0],
-		BR = poly[2],
-		bbox = [TL[0], TL[1], BR[0], BR[1]];
+		TL = ring[0],
+		BR = ring[2],
+		bbox = [TL[1], TL[0], BR[1], BR[0]];
 	
 	return bbox.join(",");
 }
 	
-function toRing(poly) {  // [ {x,y}, ...] degs --> [ [lon,lat], ...] degs 
+function toRing(poly) {  // [ {x,y}, ...] degs --> [ [lat,lon], ...] degs 
 	var rtn = [];
 	poly[0].forEach( function (pt) {
 		rtn.push( [pt.x, pt.y] );
