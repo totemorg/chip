@@ -7,20 +7,20 @@
  * @requires stream
  * @requires crypt
  * @requires enum
- * @requires atomic
+ * @requires glwip
  */
-var   // globals
-	ENV = process.env; 
-
-var	// nodejs
+var   
+	// globals
+	ENV = process.env,
+	
+	// nodejs
 	FS = require("fs"), 
 	CP = require("child_process"),
 	STREAM = require("stream"),
-	CRYPTO = require("crypto");
+	CRYPTO = require("crypto"),
 
-var  // totem
-	ATOM = require("atomic"),
-	LWIP = ATOM.plugins.LWIP;
+	// totem
+	LWIP = require('glwip');
 
 const { Copy,Each,Log } = require("enum");
 
@@ -262,7 +262,6 @@ var HACK = module.exports = {
 			}
 			
 			var 
-				//fetcher = HACK.fetcher || function () {},
 				group = pipe.group,
 				where = pipe.where || {},
 				order = pipe.order || "t",
@@ -283,45 +282,6 @@ var HACK = module.exports = {
 
 			switch ( src.constructor ) {
 				case String: 
-					/*
-					else
-					if (false)  // regulate a image chipping ring [ [lat,lon], ... ]
-						HACK.chipAOI(pipe, job, function (chip,dets,sql) {
-							var updated = new Date();
-
-							//Log({save:dets});
-							sql.query(
-								"REPLACE INTO ??.chips SET ?,Ring=GeomFromText(?),Anchor=GeomFromText(?)", [ 
-									group, {
-										Thread: job.thread,
-										Save: JSON.stringify(dets),
-										t: updated,
-										x: chip.pos.lat,
-										y: chip.pos.lon
-									},
-									chip.ring,
-									chip.anchor
-							]);
-
-							// reserve voxel detectors above this chip
-							for (var vox=HACK.voxelSpecs,alt=vox.minAlt, del=vox.deltaAlt, max=vox.maxAlt; alt<max; alt+=del) 
-								sql.query(
-									"REPLACE INTO ??.voxels SET ?,Ring=GeomFromText(?),Anchor=GeomFromText(?)", [
-									group, {
-										Thread: job.thread,
-										Save: null,
-										t: updated,
-										x: chip.pos.lat,
-										y: chip.pos.lon,
-										z: alt
-									},
-									chip.ring,
-									chip.anchor
-								]);
-
-						});
-					*/
-
 					sql.forEach( regmsg, get.files, src.toQuery(sql), function (file) {  // regulate requested file(s)
 
 						where.fileID = file.ID;
@@ -336,8 +296,7 @@ var HACK = module.exports = {
 						else
 							chipFile(file);
 
-					});
-				
+					});				
 					break;
 					
 				case Array:  // src contains event list
@@ -386,19 +345,23 @@ var HACK = module.exports = {
 				chipJob( pipe );
 				break;
 		}
-	},	
+	},
 	
 	ingestCache: function (sql, fileID, cb) {  // ingest the evcache into the events with callback cb(aoi)
 		
 		sql.forAll(  // ingest evcache into events history by determining which voxel they fall within
 			"INGEST",
 			fileID 
+				// voxelize the events
 				? "INSERT INTO app.events SELECT evcache.*,voxels.ID AS voxelID FROM app.evcache " 
 						+ "LEFT JOIN app.voxels ON MBRcontains(voxels.Ring,point(evcache.x,evcache.y)) AND "
 						+ "evcache.z BETWEEN voxels.alt AND voxels.alt+voxels.height WHERE ? HAVING voxelID"
 
+				// bypass voxelization
 				: "INSERT INTO app.events SELECT *, 0 AS voxelID FROM app.evcache WHERE ?" ,
+			
 			{"evcache.fileID":fileID},
+			
 			function (ingest) {
 				
 			sql.forFirst(
@@ -406,11 +369,10 @@ var HACK = module.exports = {
 				
 				"SELECT "
 				+ "? AS Voxelized, "
-				+ "min(x) AS xMin, max(x) AS xMax, "
-				+ "min(y) AS yMin, max(y) AS yMax, "
-				+ "min(z) AS zMin, max(z) AS zMax, "
-				// + "min(t) AS tMin, max(t) AS tMax, "
-				+ "max(t)+1 AS Steps, "
+				+ "min(x) AS xMin, max(x) AS xMax, "		// lat [degs]
+				+ "min(y) AS yMin, max(y) AS yMax, "		// lon [degs]
+				+ "min(z) AS zMin, max(z) AS zMax, "		// alt [km]
+				+ "floor(max(s)) AS Steps, "		// 1 sec steps
 				+ "max(stateID)+1 AS States, "
 				+ "max(actorID)+1 AS Actors, "
 				+ "count(id) AS Samples "
@@ -418,23 +380,11 @@ var HACK = module.exports = {
 				
 				[ ingest.affectedRows, {fileID:fileID} ],	cb);
 				
-				/*
-				function (aoi) {
-				
-					sql.forAll(  // return ingested events 
-						"INGEST",
-						"SELECT * FROM app.evcache WHERE ? ORDER BY t", 
-						{fileID:fileID},
-						function (evs) {
-							cb( aoi, evs );
-					});
-			});  */
 		});
 	},
 
 	ingestPipe: function (sql, filter, fileID, src, cb) {  // pipe src event stream with callback cb(aoi) when finished.
 		sql.query("DELETE FROM app.evcache WHERE ?", {fileID: fileID});
-		//sql.query("DELETE FROM app.events WHERE ?", {fileID: fileID});
 
 		sql.query("SELECT startTime FROM app.files WHERE ? LIMIT 1", {ID: fileID}, function (err, ref) {
 			
@@ -447,31 +397,19 @@ var HACK = module.exports = {
 
 						function cache(ev) {
 
-							/*
-							if ( !ingested )   // save first event record as reference
-								refTime = ev.t;
-								sql.query("UPDATE app.files SET ? WHERE ?", [{
-									refEv: JSON.stringify(ev)
-									refTime = ev.t
-								}, {ID: fileID}] ); */
-
 							ingested++;
-							//Log(ingested,ev);
-							//Log(refTime, ev.t, ev.t-refTime);
 							
 							sql.query(
-								//"INSERT INTO app.evcache SET ?, Anchor=GeomFromText(?)", [{
 								"INSERT INTO app.evcache SET ?", [{
 									x: ev.x || 0,		// lat [degs]
 									y: ev.y || 0,		// lon [degs]
-									z: ev.z || 0,		// alt [m]
+									z: ev.z || 0,		// alt [km]
 									t: ev.t,		// sample time
-									//s: ev.s || 0, 		// time step 
-									actorID: ev.actor || 0,		// unqiue id 
-									stateID: ev.state || 0,		// current state 
+									s: ev.s || (ev.t - refTime)*1e-3, 		// relative steps [secs]
+									actorID: ev.actorID || 0,		// unqiue id 
+									stateID: ev.stateID || 0,		// current state 
 									fileID: fileID		// source file
 								}
-								//toPoint( [ev.x || 0, ev.y || 0] ) 
 							] );
 						}
 
@@ -508,7 +446,7 @@ var HACK = module.exports = {
 
 						sql.forAll(  // update file with aoi info
 							"INGEST",
-							"UPDATE app.files SET ?, Samples=Samples+?, Rejects=Rejects+?, Relevance=1-Rejects/Samples WHERE ?", [{ // , Ring=GeomFromText(?)
+							"UPDATE app.files SET ?, Samples=Samples+?, Rejects=Rejects+?, Relevance=1-Rejects/Samples WHERE ?", [{ 
 								States: aoi.States,
 								Steps: aoi.Steps,
 								Actors: aoi.Actors,
@@ -518,7 +456,6 @@ var HACK = module.exports = {
 							},
 							aoi.Voxelized,
 							aoi.Samples - aoi.Voxelized,
-							//toPolygon( Ring ), 
 							{ID: fileID} 
 						]);
 
@@ -1082,7 +1019,7 @@ function POS(x,y) {
 Array.prototype.pos = function (c) { return  new POS(this[1]/c, this[0]/c); }
 
 POS.prototype = {
-	deg: function (c) { return [this.y*c, this.x*c]; },
+	map: function (c) { return [this.x*c, this.y*c]; },
 	add: function (u) { this.x += u.x; this.y += u.y; return this; },
 	sub: function (u) { this.x -= u.x; this.y -= u.y; return this; },
 	scale: function (a) { this.x *= a; this.y *= a; return this; },
@@ -1092,7 +1029,7 @@ POS.prototype = {
 
 /*===================================================
 AOI interface
- ring = [ [lon,lat], .... ] degs defining entire aoi
+ ring = [ [lat,lon], .... ] degs defines aoi
  chipFeatures = number of feature across chip edge
  chipPixels = number of pixels across chip edge
  chipDim = length of chip edge [m]
@@ -1107,7 +1044,6 @@ function AOI( ring,chipFeatures,chipPixels,chipDim,overlap,r ) {  // build an AO
 	/*
 	Haversine functions to compute arc length on sphere of radius r
 	*/
-
 	/*
 	function hsine(theta) { return (1-cos(theta))/2; }  // havesine between two anchors subtending angle theta
 	function ahsine(h12) { return 2 * asin(sqrt(h12)); }
@@ -1221,7 +1157,6 @@ function CHIP(aoi) {
 		cos = Math.cos,
 		acos = Math.acos,	
 		eps = {pos: 0.00001, scale:0.01},
-		//pow = Math.pow,		
 		lat = aoi.lat,  // [rads]
 		lon = aoi.lon,  // [rads]
 		c = aoi.c,
@@ -1246,20 +1181,18 @@ function CHIP(aoi) {
 		TR = this.TR = new POS(lat.val+lat.del, lon.val+lon.del),
 		BR = this.BR = new POS(lat.val, lon.val+lon.del);
 		
-	//console.log({lat: lat,lon: lon});
-	//Log(lat);
+	//Log("chip", {lat: lat,lon: lon});
 	
 	var 
-		TLd = TL.deg(c), // [lat,lon] rads --> [lon,lat] degs
-		BLd = BL.deg(c),
-		TRd = TR.deg(c), 
-		BRd = BR.deg(c),
+		TLd = TL.map(c), // [lat,lon] rads --> [lat,lon] degs
+		BLd = BL.map(c),
+		TRd = TR.map(c), 
+		BRd = BR.map(c),
 		ring = [TLd, BLd, BRd, TRd, TLd];
 		
 	this.bbox = toBBox( ring ); // [TLd[0], TLd[1], BRd[0], BRd[1]];   // [min lon,lat, max lon,lat]  degs
-	//this.anchor = toPoint(TLd);
-	this.lon = TLd[0];  // [degs]
-	this.lat = TLd[1]; 	// [degs]
+	this.lat = TLd[0]; 	// [degs]
+	this.lon = TLd[1];  // [degs]
 	this.ring = toPolygon( ring );
 
 	if (this.r)  // curved earth model
@@ -1574,7 +1507,7 @@ if (args = null)
 						[70.0899, 33.9105] // BL
 					];
 
-				console.log({deg: ring[0], rad: ring[0].pos(c), degrtn: ring[0].pos(c).deg(c)});
+				console.log({deg: ring[0], rad: ring[0].pos(c), degrtn: ring[0].pos(c).map(c)});
 				
 			default:
 				Trace("IGNORING UTIL SWITCH "+args[2]);
