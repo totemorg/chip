@@ -86,12 +86,16 @@ var HACK = module.exports = {
 	},
 	
 	chipEvents: function ( sql, pipe, cb ) {  // callback cb(meta)
-		function getMeta( aoi, soi, file, voxel, cb ) {
+		function getMeta( aoi, soi, file, voxel, pipe, cb ) {
 			
 			var
 				makeChip = HACK.make.chip,
 				makeFlux = HACK.make.flux,
-				makeCollects = HACK.make.collects;
+				makeCollects = HACK.make.collects,
+				limit = pipe.limit || 1000,
+				offset = pipe.offset || 0,
+				order = pipe.order || "t",
+				fields = pipe.fields || "*";
 
 			sql.cache({  // determine sensor collects at chip under this voxel
 				key: {
@@ -152,8 +156,6 @@ var HACK = module.exports = {
 							"SELECT * FROM app.voxels WHERE ?",
 							[ {chipID: voxel.chipID} ], function (voxel) {
 
-								where.voxelID = voxel.ID;
-
 								sql.forFirst( // get stats on this file-voxel pair
 									"REG",
 									"SELECT * FROM app.stats WHERE least(?)", 
@@ -162,7 +164,10 @@ var HACK = module.exports = {
 									cb({
 										File: file,
 										Voxel: voxel,
-										Events: sql.format(get.events, [where,limit,offset] ), 
+										Events: sql.format(	
+											`SELECT ${fields} FROM app.events WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
+											 [{voxelID: voxel.ID, fileID: file.ID},limit,offset] 
+										), 
 										Flux: flux,
 										Stats: stats,
 										Collects: collects,
@@ -181,7 +186,7 @@ var HACK = module.exports = {
 		}
 			
 		HACK.chip( sql, pipe, function ( aoi, soi, file, voxel ) {
-			getMeta( aoi, soi, file, voxel, function (meta) {
+			getMeta( aoi, soi, file, voxel, pipe, function (meta) {
 				cb(meta);
 			});
 		});
@@ -190,16 +195,9 @@ var HACK = module.exports = {
 	chip: function ( sql, pipe, cb ) {  //< callback cb(aoi,soi,file,voxel) 
 		
 		function toQuery(q) {
-			if (typeof q == "string") {
-				var 
-					query = {},
-					path = q.toQuery(query);
-			
-				return path ? Copy({Name:path}, query) : query;
-			}
-			
-			else
-				return q || {};
+			return (typeof q == "string") 
+				? q.toQuery(sql)
+				: q || {};
 		}
 		
 		function chipJob( pipe ) {
@@ -212,7 +210,7 @@ var HACK = module.exports = {
 					sql.forEach(  // pull all voxels falling over specified aoi and stack them by chipID
 						"REG", 
 						"SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID", 
-						[ toPolygon(aoi), voi ], function (voxel) {
+						[ toPolygon(aoi), {Class: voi.Name || voi.Class || "test", alt:0} ], function (voxel) {
 							cb( aoi, soi, file, voxel );
 					});
 				}
@@ -263,17 +261,11 @@ var HACK = module.exports = {
 			
 			var 
 				group = pipe.group,
-				where = pipe.where || {},
-				order = pipe.order || "t",
-				limit = pipe.limit || 1000,
 				soi = toQuery(pipe.soi),
 				aoi = toQuery(pipe.aoi),
 				voi = toQuery(pipe.voi),
 				src = pipe.file || pipe.source || "",
-				fields = "*",
-				offset = pipe.offset || 0, 
 				get = {
-					events: `SELECT ${fields} FROM app.events WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
 					chips: `SELECT ${group} FROM app.events GROUP BY ${group} `,
 					voxels: "SELECT * FROM app.voxels WHERE ?", 
 					files: "SELECT * FROM app.files WHERE least(?,1)"
@@ -283,8 +275,6 @@ var HACK = module.exports = {
 			switch ( src.constructor ) {
 				case String: 
 					sql.forEach( regmsg, get.files, src.toQuery(sql), function (file) {  // regulate requested file(s)
-
-						where.fileID = file.ID;
 
 						if (file.Archived) 
 							CP.exec("", function () {
@@ -326,7 +316,7 @@ var HACK = module.exports = {
 					chipJob({ file: pipe });
 				
 				else
-				sql.forEach( "REG", "SELECT pipe FROM app.jobs WHERE ?", {Name:pipe}, function (rec) {
+				sql.forEach( "REG", "SELECT pipe FROM app.pipes WHERE ?", {Name:pipe}, function (rec) {
 					try {
 						chipJob( JSON.parse(rec.pipe) );
 					}
