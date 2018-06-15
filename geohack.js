@@ -205,7 +205,7 @@ var HACK = module.exports = {
 			function chipFile( file ) { 
 				
 				function chipVoxels( aoi, voi, soi) {
-					Log("chip voxels", aoi, voi, soi );
+					Log("chip", {aoi: aoi, voi: voi, soi: soi} );
 					
 					sql.forEach(  // pull all voxels falling over specified aoi and stack them by chipID
 						"REG", 
