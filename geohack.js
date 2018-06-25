@@ -226,11 +226,15 @@ var HACK = module.exports = {
 						});
 					
 					else
-						sql.forEach(  // pull all voxels over specified file and stack them by chipID
-							"REG", 
-							"SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(Ring,Point(0,0)) AND least(?,1) GROUP BY chipID", 
-							[ surfaceVoxel ], function (voxel) {
-								cb( aoi, soi, file, voxel );
+						sql.query( "SELECT voxelID FROM app.events WHERE ? GROUP BY voxelID", {fileID: file.ID})
+						.on("result", function (ev) {
+							Log(ev);
+							sql.forEach(  // pull all voxels over specified file and stack them by chipID
+								"REG", 
+								"SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE ? GROUP BY chipID", 
+								{ID: ev.voxelID}, function (voxel) {
+									cb( aoi, soi, file, voxel );
+							});
 						});
 						
 				}
@@ -383,8 +387,8 @@ var HACK = module.exports = {
 				+ "min(y) AS yMin, max(y) AS yMax, "		// lon [degs]
 				+ "min(z) AS zMin, max(z) AS zMax, "		// alt [km]
 				+ "floor(max(s)) AS Steps, "		// 1 sec steps
-				+ "max(stateID)+1 AS States, "
-				+ "max(actorID)+1 AS Actors, "
+				+ "max(u)+1 AS States, "
+				+ "max(n)+1 AS Actors, "
 				+ "count(id) AS Samples "
 				+ "FROM app.evcache WHERE ?", 
 				
@@ -416,8 +420,8 @@ var HACK = module.exports = {
 									z: ev.z || 0,		// alt [km]
 									t: ev.t,		// sample time
 									s: ev.s || (ev.t - refTime)*1e-3, 		// relative steps [secs]
-									actorID: ev.actorID || 0,		// unqiue id 
-									stateID: ev.stateID || 0,		// current state 
+									n: ev.n || 0,		// unqiue id 
+									u: ev.u || 0,		// current state 
 									fileID: fileID		// source file
 								}
 							] );
