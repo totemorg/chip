@@ -206,13 +206,33 @@ var HACK = module.exports = {
 				
 				function chipVoxels( aoi, voi, soi) {
 					Log("chip", {aoi: aoi, voi: voi, soi: soi} );
+					var surfaceVoxel = {Class: voi.Name || voi.Class || "test", alt:0};
 					
-					sql.forEach(  // pull all voxels falling over specified aoi and stack them by chipID
-						"REG", 
-						"SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID", 
-						[ toPolygon(aoi), {Class: voi.Name || voi.Class || "test", alt:0} ], function (voxel) {
-							cb( aoi, soi, file, voxel );
-					});
+					if (aoi.length)
+						sql.forEach(  // pull all voxels falling over specified aoi and stack them by chipID
+							"REG", 
+							"SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID", 
+							[ toPolygon(aoi), surfaceVoxel ], function (voxel) {
+								cb( aoi, soi, file, voxel );
+						});
+					
+					else
+					if (file.Ring)
+						sql.forEach(  // pull all voxels over specified file and stack them by chipID
+							"REG", 
+							"SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID", 
+							[ toPolygon(toRing(file.Ring)), surfaceVoxel ], function (voxel) {
+								cb( aoi, soi, file, voxel );
+						});
+					
+					else
+						sql.forEach(  // pull all voxels over specified file and stack them by chipID
+							"REG", 
+							"SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(Ring,Point(0,0)) AND least(?,1) GROUP BY chipID", 
+							[ surfaceVoxel ], function (voxel) {
+								cb( aoi, soi, file, voxel );
+						});
+						
 				}
 				
 				/*
@@ -1526,7 +1546,7 @@ function toBBox(ring) {  // [ [lat,lon], ...] degs --> [TL.lon, TL.lat, BR.lon, 
 	return bbox.join(",");
 }
 	
-function toRing(poly) {  // [ {x,y}, ...] degs --> [ [lat,lon], ...] degs 
+function toRing(poly) {  // [[ {x,y}, ...]] degs --> [ [lat,lon], ...] degs 
 	var rtn = [];
 	poly[0].forEach( function (pt) {
 		rtn.push( [pt.x, pt.y] );
