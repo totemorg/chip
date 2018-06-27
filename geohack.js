@@ -1333,7 +1333,53 @@ function Trace(msg,arg) {
 	ENUM.trace("G>",msg,arg);
 }
 
-function util(sql, runopt, input, rots, pads, flips) {
+function toPolygon(ring) {  // [ [lat,lon], ... ] degs --> POLYGON(( lat lon, ... )) degs
+	return 'POLYGON((' + [  
+		ring[0].join(" "),
+		ring[1].join(" "),
+		ring[2].join(" "),
+		ring[3].join(" "),
+		ring[0].join(" ") ].join(",") +'))' ;
+}
+
+function toPoint( u ) {  // [lat,lon] degs --> POINT(lat,lon) degs
+	return 	`POINT(${u[0]} ${u[1]})`;
+}
+
+function toBBox(ring) {  // [ [lat,lon], ...] degs --> [TL.lon, TL.lat, BR.lon, BR.lat] degs
+	var 
+		TL = ring[0],
+		BR = ring[2],
+		bbox = [TL[1], TL[0], BR[1], BR[0]];
+	
+	return bbox.join(",");
+}
+	
+function toRing(poly) {  // [[ {x,y}, ...]] degs --> [ [lat,lon], ...] degs 
+	var rtn = [];
+	poly[0].forEach( function (pt) {
+		rtn.push( [pt.x, pt.y] );
+	});
+	return rtn;
+}
+
+[
+	function sample() {
+		return this[ floor( random() * this.length ) ];
+	},
+
+	function scale(a) {
+		for (var n=0, N=this.length; n<N; n++) this[n] = this[n] * a;
+	}
+].extend(Array);
+	
+[
+	function getJulian() {
+		return Math.ceil((this / 86400000) - (this.getTimezoneOffset()/1440) + 2440587.5);
+	}
+].extend(Date);
+	
+function util(sql, runopt, input, rots, pads, flips) {  //< supports GX unit testing
 	var 
 		plop=0, plops=flips.length * rots.length * pads.length,
 		now = new Date();
@@ -1482,95 +1528,111 @@ function util(sql, runopt, input, rots, pads, flips) {
 	});
 }
 
-//================ unit testing and db setups
+switch (process.argv[2]) { //<unit tests and db config
+	case "G1":
+		var HACK = require("../geohack");
 
-if (args = null)
-	thread( function (sql) {
-		switch ( args[2] ) {
-			case "--util":
-				util(sql, args[3], args[4], [], [], []);
-				break;
+		var TOTEM = require("../totem").config({
+			"byTable.": {
+				chip: HACK.chippers,
 
-			case "--suncheck":
-				Trace({
-					Solar: new SOLAR(40771, 0.1/24, 3, 55.56, 38.14)
-				});
-				break;
+				wfs: function (req,res) {
+					res("here i go again");
 
-			case "--dbprime":
-				util(sql,"dbprime","notcat",[0],[0],[""]);
-				break;
+					TOTEM.fetchers.http(ENV.WFS_TEST, function (data) {
+						console.log(data);
+					});
 
-			case "--cars":
-				util(sql,"maketest","cars",[0],[0],["","y","y","xy"]);
-				util(sql,"maketest","cars",[45],[0],[""]);
-				break;
+				}
 
-			case "--digits":
-				process.chdir(ENV.DIGITS);
-				util(sql,"maketest","revbg.txt",[0],[0],[""]);
-				break;
+			},				
 
-			case "--rings":
-				var 
-					c = 180/Math.PI,
-					ring = [
-						[70.0899, 33.9108], // TL lon,lat [degs]
-						[70.0988, 33.9018], // TR
-						[70.0988, 33.9105], // BR
-						[70.0899, 33.9105] // BL
-					];
+			mysql: {
+				host: ENV.MYSQL_HOST,
+				user: ENV.MYSQL_USER,
+				pass: ENV.MYSQL_PASS
+			}
+		}, function (err) {
+			Trace( err || "Go ahead and test my default /chip and /wfs endpoints", {
+				my_readers: TOTEM.byTable
+			});
+		});
 
-				console.log({deg: ring[0], rad: ring[0].pos(c), degrtn: ring[0].pos(c).map(c)});
-				
-			default:
-				Trace("IGNORING UTIL SWITCH "+args[2]);
-		}
-	});
+		HACK.config({
+			thread: TOTEM.thread
+		});
+		break;	
 
-function toPolygon(ring) {  // [ [lat,lon], ... ] degs --> POLYGON(( lat lon, ... )) degs
-	return 'POLYGON((' + [  
-		ring[0].join(" "),
-		ring[1].join(" "),
-		ring[2].join(" "),
-		ring[3].join(" "),
-		ring[0].join(" ") ].join(",") +'))' ;
-}
+	case "GX":  // db setups
 
-function toPoint( u ) {  // [lat,lon] degs --> POINT(lat,lon) degs
-	return 	`POINT(${u[0]} ${u[1]})`;
-}
+		var TOTEM = require("../totem").config({
+			"byTable.": {
+				chip: HACK.chippers,
 
-function toBBox(ring) {  // [ [lat,lon], ...] degs --> [TL.lon, TL.lat, BR.lon, BR.lat] degs
-	var 
-		TL = ring[0],
-		BR = ring[2],
-		bbox = [TL[1], TL[0], BR[1], BR[0]];
+				wfs: function (req,res) {
+					res("here i go again");
+
+					TOTEM.fetchers.http(ENV.WFS_TEST, function (data) {
+						console.log(data);
+					});
+
+				}
+
+			},				
+
+			mysql: {
+				host: ENV.MYSQL_HOST,
+				user: ENV.MYSQL_USER,
+				pass: ENV.MYSQL_PASS
+			}
+		}, function (err) {
+			Trace( err || "Go ahead and test my default /chip and /wfs endpoints", {
+				my_readers: TOTEM.byTable
+			});
+		});
+		
+		TOTEM.thread( function (sql) {
+			switch ( process.argv[3] ) {
+				case "--util":
+					util(sql, args[3], args[4], [], [], []);
+					break;
+
+				case "--suncheck":
+					Trace({
+						Solar: new SOLAR(40771, 0.1/24, 3, 55.56, 38.14)
+					});
+					break;
+
+				case "--dbprime":
+					util(sql,"dbprime","notcat",[0],[0],[""]);
+					break;
+
+				case "--cars":
+					util(sql,"maketest","cars",[0],[0],["","y","y","xy"]);
+					util(sql,"maketest","cars",[45],[0],[""]);
+					break;
+
+				case "--digits":
+					process.chdir(ENV.DIGITS);
+					util(sql,"maketest","revbg.txt",[0],[0],[""]);
+					break;
+
+				case "--rings":
+					var 
+						c = 180/Math.PI,
+						ring = [
+							[70.0899, 33.9108], // TL lon,lat [degs]
+							[70.0988, 33.9018], // TR
+							[70.0988, 33.9105], // BR
+							[70.0899, 33.9105] // BL
+						];
+
+					console.log({deg: ring[0], rad: ring[0].pos(c), degrtn: ring[0].pos(c).map(c)});
+
+				default:
+					Trace("IGNORING UTIL SWITCH "+args[2]);
+			}
+		});
+		break;
 	
-	return bbox.join(",");
 }
-	
-function toRing(poly) {  // [[ {x,y}, ...]] degs --> [ [lat,lon], ...] degs 
-	var rtn = [];
-	poly[0].forEach( function (pt) {
-		rtn.push( [pt.x, pt.y] );
-	});
-	return rtn;
-}
-
-[
-	function sample() {
-		return this[ floor( random() * this.length ) ];
-	},
-
-	function scale(a) {
-		for (var n=0, N=this.length; n<N; n++) this[n] = this[n] * a;
-	}
-].extend(Array);
-	
-[
-	function getJulian() {
-		return Math.ceil((this / 86400000) - (this.getTimezoneOffset()/1440) + 2440587.5);
-	}
-].extend(Date);
-	
