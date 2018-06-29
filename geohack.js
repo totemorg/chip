@@ -206,22 +206,18 @@ var HACK = module.exports = {
 				
 				function chipVoxels( aoi, voi, soi) {
 					Log("chip", {aoi: aoi, voi: voi, soi: soi} );
-					var surfaceVoxel = {Class: voi.Name || voi.Class || "test", alt:0};
+					var matchVoxel = {Class: voi.Name || voi.Class || "test"};
 					
 					if (aoi.length)
 						sql.forEach(  // pull all voxels falling over specified aoi and stack them by chipID
-							"REG", 
-							"SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID", 
-							[ toPolygon(aoi), surfaceVoxel ], function (voxel) {
+							get.msg, get.voxels, [ toPolygon(aoi), matchVoxel ], function (voxel) {
 								cb( aoi, soi, file, voxel );
 						});
 					
 					else
 					if (file.Ring)
 						sql.forEach(  // pull all voxels over specified file and stack them by chipID
-							"REG", 
-							"SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID", 
-							[ toPolygon(toRing(file.Ring)), surfaceVoxel ], function (voxel) {
+							get.msg, get.voxels, [ toPolygon(toRing(file.Ring)), matchVoxel ], function (voxel) {
 								cb( aoi, soi, file, voxel );
 						});
 					
@@ -230,7 +226,7 @@ var HACK = module.exports = {
 						.on("result", function (ev) {
 							Log(ev);
 							sql.forEach(  // pull all voxels over specified file and stack them by chipID
-								"REG", 
+								get.msg, 
 								"SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE ? GROUP BY chipID", 
 								{ID: ev.voxelID}, function (voxel) {
 									cb( aoi, soi, file, voxel );
@@ -239,48 +235,13 @@ var HACK = module.exports = {
 						
 				}
 				
-				/*
-				if ( group )  // regulate chips 
-					sql.forEach( regmsg, get.chips, [ req.group, req.group, req, group ], function (chip) {  // process each chip
-						var 
-							dswhere = Copy(where,{}),
-							dsargs = [req.group, req.group, dswhere, limit];
-
-						Each(chip, function (key,val) {
-							dswhere[key] = val;
-						});
-
-						sql.insertJob( Copy(job, {  // put job into the job queue
-							dsevs: getEvents,
-							dsargs: dsargs
-						}), function (sql, job) {
-
-							sql.forAll( regmsg, job.dsevs, job.dsargs, cb );
-
-						});
-					});
-
-				else */
 				if (aoi.Name)  // regulate chips or events through voxels
-					sql.forEach( "REG", "SELECT Ring FROM app.aois WHERE ?", {Name:aoi.Name}, function (rec) {
+					sql.forEach( get.msg, get.rings, {Name:aoi.Name}, function (rec) {
 						chipVoxels( JSON.parse(rec.Ring) , voi, soi );
 					});
 
 				else   // pull all events
 					chipVoxels( aoi, voi, soi );
-					/*
-					sql.forFirst( // get stats on this file-voxel pair
-						"REG",
-						"SELECT * FROM app.stats WHERE least(?)", 
-						[ {fileID: file.ID, voxelID: 0} ], function (stats) {
-							
-							//Log(">>>stats", stats);
-							cb({ 
-								Events: sql.format(get.events, [where,limit,offset] ),
-								File: file,
-								Stats: stats
-							});
-					}); */
 			}
 			
 			var 
@@ -290,16 +251,22 @@ var HACK = module.exports = {
 				voi = toQuery(pipe.voi),
 				src = pipe.file || pipe.source || "",
 				get = {
-					chips: `SELECT ${group} FROM app.events GROUP BY ${group} `,
-					voxels: "SELECT * FROM app.voxels WHERE ?", 
-					files: "SELECT * FROM app.files WHERE least(?,1)"
-				},
-				regmsg = `REG ${src}`;
+					rings: "SELECT Ring FROM app.aois WHERE ?",
+					//chips: `SELECT ${group} FROM app.events GROUP BY ${group} `,
+					//voxels: "SELECT * FROM app.voxels WHERE ?", 
+					voxels: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID",
+					chips: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) ORDER BY ID",
+					files: "SELECT * FROM app.files WHERE least(?,1)",
+					msg: `REG ${src}`
+				};
 
 			switch ( src.constructor ) {
 				case String: 
-					sql.forEach( regmsg, get.files, src.toQuery(sql), function (file) {  // regulate requested file(s)
+					sql.forEach( get.msg, get.files, src.toQuery(sql), function (file) {  // regulate requested file(s)
 
+						["stateKeys", "stateSymbols"].parseJSON(file);
+						Log( "file", file.stateKeys, file.stateSymbols );
+						
 						if (file.Archived) 
 							CP.exec("", function () {
 								Trace("RESTORING "+file.Name);
