@@ -305,7 +305,7 @@ var HACK = module.exports = {
 					sql.forEach( get.msg, get.files, src.toQuery(sql,{}), function (file) {  // regulate requested file(s)
 
 						["stateKeys", "stateSymbols"].parseJSON(file);
-						Log( "file", file.stateKeys, file.stateSymbols );
+						Log( "file", file );
 						
 						if (file.Archived) 
 							CP.exec("", function () {
