@@ -85,133 +85,7 @@ var HACK = module.exports = {
 		return hdist(h12, 6137)/2; //  [km]
 	},
 	
-	chipEvents: function ( sql, pipe, cb ) {  // callback cb(meta)
-		function getMeta( aoi, soi, file, voxel, pipe, cb ) {
-			
-			var
-				makeChip = HACK.make.chip,
-				makeFlux = HACK.make.flux,
-				makeCollects = HACK.make.collects,
-				limit = pipe.limit || 1000,
-				offset = pipe.offset || 0,
-				order = pipe.order || "t",
-				fields = pipe.fields || "*";
-
-			sql.cache({  // determine sensor collects at chip under this voxel
-				key: {
-					Name1: "collects", 
-					Index1: voxel.chipID,
-					Name1: JSON.stringify(soi),
-					t: 0
-				},
-				parms: Copy(soi, { 
-					ring: aoi
-				}),
-				default: [],
-				make: makeCollects
-			}, function (collects) {
-
-				//Log(voxel.Ring, collects);
-				var
-					Ring = toRing( voxel.Ring );
-
-				sql.cache({
-					key: {
-						Name1: "chip", 
-						x1: voxel.lon, 
-						x2: voxel.lat,
-						t: 0
-					},
-					parms: { 
-						path: `./public/images/chips/${voxel.chipID}.jpeg`,
-						bbox: toBBox( Ring ),
-						ring: toPolygon( Ring ),
-						lat: voxel.lat,
-						lon: voxel.lon
-					},
-					default: {
-						path: (collects[0] || {url: "./shares/spoof.jpg"}).url									
-					},
-					make: makeChip
-				}, function (chip) {
-
-					sql.cache({  // get solar flux information at this chip
-						key: {
-							Name1: "flux", 
-							x1: voxel.lon, 
-							x2: voxel.lat,
-							t: 0
-						},
-						parms: { 
-							lat: voxel.lat,
-							lon: voxel.lon,
-							tod: new Date()
-						},
-						default: null,
-						make: makeFlux
-					}, function (flux) {
-
-						if ( pipe.ag )
-							sql.forFirst( // get stats on this file-voxel pair
-								"REG",
-								"SELECT * FROM app.stats WHERE least(?)", 
-								[ {fileID: file.ID, voxelID: voxel.ID} ], function (stats) {
-
-								cb({
-									File: file,
-									Voxel: voxel,
-									Events: sql.format(
-											`SELECT ${fields} FROM app.events WHERE ? AND MBRcontains(geomfromtext(?),Point(x,y)) ORDER BY ${order} LIMIT ? OFFSET ?`,
-											[{fileID: file.ID}, toPolygon(aoi), limit, offset]  ),
-									Flux: flux,
-									Stats: stats,
-									Collects: collects,
-									Chip: chip
-								});
-							});
-						
-						else
-							sql.forEach( // get each voxel above this chip
-								"REG",
-								"SELECT * FROM app.voxels WHERE ?",
-								[ {chipID: voxel.chipID} ], function (voxel) {
-
-									sql.forFirst( // get stats on this file-voxel pair
-										"REG",
-										"SELECT * FROM app.stats WHERE least(?)", 
-										[ {fileID: file.ID, voxelID: voxel.ID} ], function (stats) {
-
-										cb({
-											File: file,
-											Voxel: voxel,
-											Events: sql.format(	
-													`SELECT ${fields} FROM app.events WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
-													[{voxelID: voxel.ID, fileID: file.ID}, limit, offset]  ), 
-											Flux: flux,
-											Stats: stats,
-											Collects: collects,
-											Chip: chip
-										});
-
-										/*if (hypo) {  // test chipID if over ground truth site then start a ROC workflow
-										} */
-									}); 
-								});	
-
-					});
-				});
-
-			});
-		}
-			
-		HACK.chip( sql, pipe, function ( aoi, soi, file, voxel ) {			
-			getMeta( aoi, soi, file, voxel, pipe, function (meta) {
-				cb(meta);
-			});
-		});
-	},
-	
-	chip: function ( sql, pipe, cb ) {  //< callback cb(aoi,soi,file,voxel) 
+	chipEvents: function ( sql, pipe, cb ) {  //< callback cb(meta) 
 		
 		function toQuery(q, def) {
 			if ( q  )
@@ -228,6 +102,125 @@ var HACK = module.exports = {
 			function chipFile( file ) { 
 				
 				function chipVoxels( aoi, voi, soi) {
+					
+					function getMeta( aoi, soi, file, voxel ) {
+
+						var
+							makeChip = HACK.make.chip,
+							makeFlux = HACK.make.flux,
+							makeCollects = HACK.make.collects,
+							limit = pipe.limit || 1000,
+							offset = pipe.offset || 0,
+							order = pipe.order || "t",
+							fields = pipe.fields || "*";
+
+						sql.cache({  // determine sensor collects at chip under this voxel
+							key: {
+								Name1: "collects", 
+								Index1: voxel.chipID,
+								Name1: JSON.stringify(soi),
+								t: 0
+							},
+							parms: Copy(soi, { 
+								ring: aoi
+							}),
+							default: [],
+							make: makeCollects
+						}, function (collects) {
+
+							//Log(voxel.Ring, collects);
+							var
+								Ring = toRing( voxel.Ring );
+
+							sql.cache({
+								key: {
+									Name1: "chip", 
+									x1: voxel.lon, 
+									x2: voxel.lat,
+									t: 0
+								},
+								parms: { 
+									path: `./public/images/chips/${voxel.chipID}.jpeg`,
+									bbox: toBBox( Ring ),
+									ring: toPolygon( Ring ),
+									lat: voxel.lat,
+									lon: voxel.lon
+								},
+								default: {
+									path: (collects[0] || {url: "./shares/spoof.jpg"}).url									
+								},
+								make: makeChip
+							}, function (chip) {
+
+								sql.cache({  // get solar flux information at this chip
+									key: {
+										Name1: "flux", 
+										x1: voxel.lon, 
+										x2: voxel.lat,
+										t: 0
+									},
+									parms: { 
+										lat: voxel.lat,
+										lon: voxel.lon,
+										tod: new Date()
+									},
+									default: null,
+									make: makeFlux
+								}, function (flux) {
+
+									if ( pipe.ag )
+										sql.forFirst( // get stats on this file-voxel pair
+											"REG",
+											"SELECT * FROM app.stats WHERE least(?)", 
+											[ {fileID: file.ID, voxelID: voxel.ID} ], function (stats) {
+
+											cb({
+												File: file,
+												Voxel: voxel,
+												Events: sql.format(
+														`SELECT ${fields} FROM app.events WHERE ? AND MBRcontains(geomfromtext(?),Point(x,y)) ORDER BY ${order} LIMIT ? OFFSET ?`,
+														[{fileID: file.ID}, toPolygon(aoi), limit, offset]  ),
+												Flux: flux,
+												Stats: stats,
+												Collects: collects,
+												Chip: chip
+											});
+										});
+
+									else
+										sql.forEach( // get each voxel above this chip
+											"REG",
+											"SELECT * FROM app.voxels WHERE ?",
+											[ {chipID: voxel.chipID} ], function (voxel) {
+
+												sql.forFirst( // get stats on this file-voxel pair
+													"REG",
+													"SELECT * FROM app.stats WHERE least(?)", 
+													[ {fileID: file.ID, voxelID: voxel.ID} ], function (stats) {
+
+													cb({
+														File: file,
+														Voxel: voxel,
+														Events: sql.format(	
+																`SELECT ${fields} FROM app.events WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
+																[{voxelID: voxel.ID, fileID: file.ID}, limit, offset]  ), 
+														Flux: flux,
+														Stats: stats,
+														Collects: collects,
+														Chip: chip
+													});
+
+													/*if (hypo) {  // test chipID if over ground truth site then start a ROC workflow
+													} */
+												}); 
+											});	
+
+								});
+							});
+
+						});
+					}
+			
 					Log("chip", {aoi: aoi, voi: voi, soi: soi} );
 					
 					if (pipe.ag) 
@@ -244,7 +237,8 @@ var HACK = module.exports = {
 								});
 
 								Log("chip states", voxel.ID, states);
-								cb( aoi, soi, file, voxel );
+								//cb( null, aoi, soi, file, voxel );
+								getMeta( aoi, soi, file, voxel );
 								
 							});
 
@@ -253,23 +247,29 @@ var HACK = module.exports = {
 					else
 					if (aoi.length)		// pull all surface voxels falling in specified aoi and of specified class
 						sql.forEach( get.msg, get.surfaceVoxels, [ toPolygon(aoi), voi ], (voxel) => {							
-							cb( aoi, soi, file, voxel );
+							getMeta( aoi, soi, file, voxel );
 						});
 					
 					else
 					if (file.Ring)		// pull all surface voxels over specified file
 						sql.forEach( get.msg, get.surfaceVoxels, [ toPolygon(toRing(file.Ring)), voi ], (voxel) => {
-							cb( aoi, soi, file, voxel );
+							getMeta( aoi, soi, file, voxel );
 						});
 					
-					else	// pull all voxels by event refs and stack them by chipID
+					else
+					if (file.ID)	// pull all voxels by event refs and stack them by chipID
 						sql.query( get.voxelsByRef, {fileID: file.ID})
 						.on("result", (ev) => {
 							sql.forEach( get.msg, get.voxelsByID, {ID: ev.voxelID}, (voxel) => {
-								cb( aoi, soi, file, voxel );
+								getMeta( aoi, soi, file, voxel );
 							});
 						});
-						
+					
+					else
+						sql.forEach( get.msg, get.dummyVoxels, [ ], (voxel) => {
+							getMeta( aoi, soi, file, voxel );
+						});
+					
 				}
 				
 				if (aoi.Name)  // pull all events inside aoi by name
@@ -294,6 +294,7 @@ var HACK = module.exports = {
 					voxelsByRef: "SELECT voxelID FROM app.events WHERE ? GROUP BY voxelID",
 					voxelsByID: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE ? GROUP BY chipID",
 					surfaceVoxels: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID ORDER BY ID",
+					dummyVoxels: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE Ring IS null GROUP BY chipID ORDER BY ID",
 					//agVoxels: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID",
 					//chips: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) ORDER BY ID",
 					files: "SELECT * FROM app.files WHERE least(?,1)",
@@ -347,13 +348,13 @@ var HACK = module.exports = {
 					chipJob({ file: pipe });
 				
 				else
-				sql.forEach( "REG", "SELECT pipe FROM app.pipes WHERE ?", {Name:pipe}, function (rec) {
-					try {
-						chipJob( JSON.parse(rec.pipe) );
-					}
-					catch (err) {
-					}
-				});
+					sql.forEach( "REG", "SELECT pipe FROM app.pipes WHERE ?", {Name:pipe}, function (rec) {
+						try {
+							chipJob( JSON.parse(rec.pipe) );
+						}
+						catch (err) {
+						}
+					});
 				break;
 			
 			case Array:
