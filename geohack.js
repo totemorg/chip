@@ -298,7 +298,7 @@ var HACK = module.exports = {
 					//agVoxels: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID",
 					//chips: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) ORDER BY ID",
 					files: "SELECT * FROM app.files WHERE least(?,1)",
-					msg: `REG ${src}`
+					msg: "G>"
 				};
 
 			switch ( src.constructor ) {
