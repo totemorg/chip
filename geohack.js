@@ -12,14 +12,15 @@
 var   
 	// globals
 	ENV = process.env,
+	TRACE = "G>",
 	
-	// nodejs
+	// nodejs modules
 	FS = require("fs"), 
 	CP = require("child_process"),
 	STREAM = require("stream"),
 	CRYPTO = require("crypto"),
 
-	// totem
+	// totem modules
 	LWIP = require('glwip');
 
 const { Copy,Each,Log } = require("enum");
@@ -298,7 +299,7 @@ var HACK = module.exports = {
 					//agVoxels: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID",
 					//chips: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) ORDER BY ID",
 					files: "SELECT * FROM app.files WHERE least(?,1)",
-					msg: "G>"
+					msg: TRACE
 				};
 
 			switch ( src.constructor ) {
@@ -1342,7 +1343,7 @@ CHIP.prototype = {
 }
 
 function Trace(msg,arg) {
-	ENUM.trace("G>",msg,arg);
+	TRACE.trace(msg,arg);
 }
 
 function toPolygon(ring) {  // [ [lat,lon], ... ] degs --> POLYGON(( lat lon, ... )) degs
