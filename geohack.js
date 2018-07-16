@@ -171,7 +171,7 @@ var HACK = module.exports = {
 
 									if ( pipe.ag )
 										sql.forFirst( // get stats on this file-voxel pair
-											"REG",
+											TRACE,
 											"SELECT * FROM app.stats WHERE least(?)", 
 											[ {fileID: file.ID, voxelID: voxel.ID} ], function (stats) {
 
@@ -190,12 +190,12 @@ var HACK = module.exports = {
 
 									else
 										sql.forEach( // get each voxel above this chip
-											"REG",
+											TRACE,
 											"SELECT * FROM app.voxels WHERE ?",
 											[ {chipID: voxel.chipID} ], function (voxel) {
 
 												sql.forFirst( // get stats on this file-voxel pair
-													"REG",
+													TRACE,
 													"SELECT * FROM app.stats WHERE least(?)", 
 													[ {fileID: file.ID, voxelID: voxel.ID} ], function (stats) {
 
@@ -349,7 +349,7 @@ var HACK = module.exports = {
 					chipJob({ file: pipe });
 				
 				else
-					sql.forEach( "REG", "SELECT pipe FROM app.pipes WHERE ?", {Name:pipe}, function (rec) {
+					sql.forEach( TRACE, "SELECT pipe FROM app.pipes WHERE ?", {Name:pipe}, function (rec) {
 						try {
 							chipJob( JSON.parse(rec.pipe) );
 						}
