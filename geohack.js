@@ -230,8 +230,8 @@ var HACK = module.exports = {
 							sql.forAll( get.msg, get.surfaceVoxels, [ toPolygon(aoi), voi ], (voxels) => {
 							
 								var 
-									states = file.stateSymbols = [],
-									keys = file.stateKeys = {index:"index", state:"voxelID"};
+									states = file.Stats_stateSymbols = [],
+									keys = file.Stats_stateKeys = {index:"index", state:"voxelID"};
 
 								voxels.forEach( (voxel) => {
 									states.push(voxel.ID);
@@ -312,7 +312,7 @@ var HACK = module.exports = {
 						if (file.Archived) 
 							CP.exec("", function () {
 								Trace("RESTORING "+file.Name);
-								sql.query("UPDATE app.files SET Archived=false WHERE ?", {ID: file.ID});
+								sql.query("UPDATE app.files SET State_Archived=false WHERE ?", {ID: file.ID});
 								chipFile(file);
 							});
 
@@ -412,11 +412,11 @@ var HACK = module.exports = {
 	ingestPipe: function (sql, filter, fileID, src, cb) {  // pipe src event stream with callback cb(aoi) when finished.
 		sql.query("DELETE FROM app.evcache WHERE ?", {fileID: fileID});
 
-		sql.query("SELECT startTime FROM app.files WHERE ? LIMIT 1", {ID: fileID}, function (err, ref) {
+		sql.query("SELECT PoP_Start FROM app.files WHERE ? LIMIT 1", {ID: fileID}, function (err, ref) {
 			
 			var 
 				ingested = 0,
-				refTime = ref[0].startTime,
+				refTime = ref[0].PoP_Start,
 				sink = new STREAM.Writable({
 					objectMode: true,
 					write: function (rec,en,cb) {
@@ -473,13 +473,13 @@ var HACK = module.exports = {
 
 						sql.forAll(  // update file with aoi info
 							"INGEST",
-							"UPDATE app.files SET ?, Samples=Samples+?, Rejects=Rejects+?, Relevance=1-Rejects/Samples WHERE ?", [{ 
-								States: aoi.States,
-								Steps: aoi.Steps,
-								Actors: aoi.Actors,
-								Graded: false,
-								Pruned: false,
-								Archived: false
+							"UPDATE app.files SET ?, Ingest_Samples=Ingest_Samples+?, Ingest_Rejects=Ingest_Rejects+?, Score_Relevance=1-Ingest_Rejects/Ingest_Samples WHERE ?", [{ 
+								Ingest_States: aoi.States,
+								Ingest_Steps: aoi.Steps,
+								Ingest_Actors: aoi.Actors,
+								State_Graded: false,
+								State_Pruned: false,
+								State_Archived: false
 							},
 							aoi.Voxelized,
 							aoi.Samples - aoi.Voxelized,
