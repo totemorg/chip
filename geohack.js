@@ -312,7 +312,7 @@ var HACK = module.exports = {
 						if (file.Archived) 
 							CP.exec("", function () {
 								Trace("RESTORING "+file.Name);
-								sql.query("UPDATE app.files SET State_Archived=false WHERE ?", {ID: file.ID});
+								sql.query("UPDATE app.files SET _State_Archived=false WHERE ?", {ID: file.ID});
 								chipFile(file);
 							});
 
@@ -473,13 +473,13 @@ var HACK = module.exports = {
 
 						sql.forAll(  // update file with aoi info
 							"INGEST",
-							"UPDATE app.files SET ?, Ingest_Samples=Ingest_Samples+?, Ingest_Rejects=Ingest_Rejects+?, Score_Relevance=1-Ingest_Rejects/Ingest_Samples WHERE ?", [{ 
-								Ingest_States: aoi.States,
-								Ingest_Steps: aoi.Steps,
-								Ingest_Actors: aoi.Actors,
-								State_Graded: false,
-								State_Pruned: false,
-								State_Archived: false
+							"UPDATE app.files SET ?, _Ingest_Samples=_Ingest_Samples+?, _Ingest_Rejects=_Ingest_Rejects+?, Score_Relevance=1-_Ingest_Rejects/_Ingest_Samples WHERE ?", [{ 
+								_Ingest_States: aoi.States,
+								_Ingest_Steps: aoi.Steps,
+								_Ingest_Actors: aoi.Actors,
+								_State_Graded: false,
+								_State_Pruned: false,
+								_State_Archived: false
 							},
 							aoi.Voxelized,
 							aoi.Samples - aoi.Voxelized,
