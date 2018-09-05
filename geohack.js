@@ -169,10 +169,12 @@ var HACK = module.exports = {
 									make: makeFlux
 								}, function (flux) {
 
+									//Log("got flux", flux);
+									//Log("got flux", voxel);
 									if ( pipe.ag )
 										sql.forFirst( // get stats on this file-voxel pair
 											TRACE,
-											"SELECT * FROM app.stats WHERE least(?)", 
+											"SELECT * FROM app._stats WHERE least(?)", 
 											[ {fileID: file.ID, voxelID: voxel.ID} ], function (stats) {
 
 											cb({
@@ -194,9 +196,10 @@ var HACK = module.exports = {
 											"SELECT * FROM app.voxels WHERE ?",
 											[ {chipID: voxel.chipID} ], function (voxel) {
 
+												//Log("vox above", voxel);
 												sql.forFirst( // get stats on this file-voxel pair
 													TRACE,
-													"SELECT * FROM app.stats WHERE least(?)", 
+													"SELECT * FROM app._stats WHERE least(?)", 
 													[ {fileID: file.ID, voxelID: voxel.ID} ], function (stats) {
 
 													cb({
@@ -222,7 +225,7 @@ var HACK = module.exports = {
 						});
 					}
 			
-					Log("chip", {aoi: aoi, voi: voi, soi: soi} );
+					//Log("chip", {aoi: aoi, voi: voi, soi: soi, pipe:pipe, file:file} );
 					
 					if (pipe.ag) 
 						sql.forEach( get.msg, get.surfaceVoxels, [ toPolygon(aoi), {Class:voi.Class, Alt:0, Ag:1} ], (voxel) => {
@@ -261,10 +264,13 @@ var HACK = module.exports = {
 					if (file.ID)	// pull all voxels by event refs and stack them by chipID
 						sql.query( get.voxelsByRef, {fileID: file.ID})
 						.on("result", (ev) => {
+							//Log("get ev", ev);
 							sql.forEach( get.msg, get.voxelsByID, {ID: ev.voxelID}, (voxel) => {
+								//Log("got vox", voxel);
 								getMeta( aoi, soi, file, voxel );
 							});
-						});
+						})
+						.on("error", (err) => Log("youch", err) );
 					
 					else
 						sql.forEach( get.msg, get.dummyVoxels, [ ], (voxel) => {
@@ -307,10 +313,10 @@ var HACK = module.exports = {
 					sql.forEach( get.msg, get.files, src.toQuery(sql,{}), function (file) {  // regulate requested file(s)
 
 						["stateKeys", "stateSymbols"].parseJSON(file);
-						Log( "file", file );
+						//Log( "file>>>>>>>", file );
 						
-						if (file.Archived) 
-							CP.exec("", function () {
+						if (file._State_Archived) 
+							CP.exec("", function () {  // revise to add a script to cp from lts and unzip
 								Trace("RESTORING "+file.Name);
 								sql.query("UPDATE app.files SET _State_Archived=false WHERE ?", {ID: file.ID});
 								chipFile(file);
