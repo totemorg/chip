@@ -5,7 +5,6 @@
  * @requires fs
  * @requires child_process
  * @requires stream
- * @requires crypt
  * @requires enum
  * @requires glwip
  */
@@ -18,7 +17,6 @@ var
 	FS = require("fs"), 
 	CP = require("child_process"),
 	STREAM = require("stream"),
-	CRYPTO = require("crypto"),
 
 	// totem modules
 	LWIP = require('glwip');
@@ -30,7 +28,7 @@ var HACK = module.exports = {
 	aoi: null, 			//< current aoi being processed
 	limit: 1e99, 		//< max numbers of chips to pull over any aoi
 
-	make: { 
+	make: {   //< methods methiods to make objects being cached 
 		chip: function makeChip( fetch, parms, cb ) {
 			var chip = parms;
 
@@ -58,7 +56,7 @@ var HACK = module.exports = {
 		}
 	},				
 	
-	ringRadius: function (ring) {
+	ringRadius: function (ring) {  //< methods used to comute radius of a geometry ring
 		/*
 		Haversine functions to compute arc length on sphere of radius r
 		*/
@@ -86,8 +84,22 @@ var HACK = module.exports = {
 		return hdist(h12, 6137)/2; //  [km]
 	},
 	
-	chipEvents: function ( sql, pipe, cb ) {  //< callback cb(meta) 
-		
+	chipEvents: function ( sql, pipe, cb ) {  
+	/**
+	Chip voxels defined by the pipe = "FILE" || "PIPE NAME" || 
+	
+		{
+			file: "/DATASET?QUERY" || "PLUGIN.CASE" || "FILENAME" || "FILE.jpg" || "FILE.json"  || [ ev, ev, ... ]
+			group: "KEY,..." || ""  
+			where: { KEY: VALUE, ...} || {}  
+			order: "KEY,..." || "t"  
+			limit: VALUE || 1000  
+			task: "NAME" || ""  
+			aoi: "NAME" || [ [lat,lon], ... ] || []	
+		}
+	
+	and send voxel meta info {File, Voxel, Events, Flux, Stats, Collects, Chip} for each chipped voxel to cb(meta).
+	**/
 		function toQuery(q, def) {
 			if ( q  )
 				return (typeof q == "string") 
@@ -115,7 +127,7 @@ var HACK = module.exports = {
 							order = pipe.order || "t",
 							fields = pipe.fields || "*";
 
-						sql.cache({  // determine sensor collects at chip under this voxel
+						sql.cache({  // cache sensor info at chip under this voxel
 							key: {
 								Name1: "collects", 
 								Index1: voxel.chipID,
@@ -133,7 +145,7 @@ var HACK = module.exports = {
 							var
 								Ring = toRing( voxel.Ring );
 
-							sql.cache({
+							sql.cache({  // cache image chip under this voxel
 								key: {
 									Name1: "chip", 
 									x1: voxel.lon, 
@@ -153,7 +165,7 @@ var HACK = module.exports = {
 								make: makeChip
 							}, function (chip) {
 
-								sql.cache({  // get solar flux information at this chip
+								sql.cache({  // cache solar flux information at this chip
 									key: {
 										Name1: "flux", 
 										x1: voxel.lon, 
@@ -376,8 +388,13 @@ var HACK = module.exports = {
 		}
 	},
 	
-	ingestCache: function (sql, fileID, cb) {  // ingest the evcache into the events with callback cb(aoi)
-		
+	ingestCache: function (sql, fileID, cb) { 
+	/** 
+	Ingest the evcache db for the given fileID into the events db then callback cb(aoi)
+	@param {Object} sql connector
+	@param {Number} fileID of internal event store (0 to bypass voxelization)	
+	@param {Function} cb Response callback( ingested aoi info )
+	*/		
 		sql.forAll(  // ingest evcache into events history by determining which voxel they fall within
 			"INGEST",
 			fileID 
@@ -415,7 +432,17 @@ var HACK = module.exports = {
 		});
 	},
 
-	ingestPipe: function (sql, filter, fileID, src, cb) {  // pipe src event stream with callback cb(aoi) when finished.
+	ingestPipe: function (sql, filter, fileID, src, cb) {  
+	/**
+	Pipe src event stream created for this fileID thru the supplied filter(ev,cache) to the evcache db with callback cb(aoi) when finished.
+	@member GEOHACK
+	@method ingestPipe
+	@param {Object} sql connector
+	@param {Function} filter the cache(ev) method supplied to filter(ev,cache) adds an event ev {x,y,z,t,s,class,index,state,fileID} to the evcache db.	
+	@param {Number} fileID of internal event store (0 to bypass voxelization)	
+	@param {Stream} src source stream created for this fileID
+	@param {Function} cb Response callback( ingested aoi info )	
+	**/
 		sql.query("DELETE FROM app.evcache WHERE ?", {fileID: fileID});
 
 		sql.query("SELECT PoP_Start FROM app.files WHERE ? LIMIT 1", {ID: fileID}, function (err, ref) {
@@ -504,16 +531,15 @@ var HACK = module.exports = {
 		});
 	},
 	
-	ingestList: function (sql, evs, fileID, cb) { // ingest events list to internal fileID with callback cb(aoi) when finished.
+	ingestList: function (sql, evs, fileID, cb) {
 	/**
-	@member HACK
-	@private
+	Ingest events list to internal fileID with callback cb(aoi) when finished.
+	@member GEOHACK
 	@method ingestList
 	@param {Object} sql connector
 	@param {Array} evs events [ ev, ... ] to ingest
 	@param {Number} fileID of internal event store (0 to bypass voxelization)	
 	@param {Function} cb Response callback( ingested aoi info )
-	Ingest an event list into the internal events file.
 	*/
 		//Trace(`INGEST ${evs.length} EVENTS ON ${fileID}`);
 		
@@ -529,9 +555,10 @@ var HACK = module.exports = {
 		HACK.ingestPipe(sql, null, fileID, src, cb);
 	},
 	
-	ingestFile: function (sql, evsPath, fileID, cb) {  // ingest events in evsPath to internal fileID with callback cb(aoi).
+	ingestFile: function (sql, evsPath, fileID, cb) {  
 	/**
-	@member HACK
+	Ingest events in evsPath to internal fileID with callback cb(aoi).
+	@member GEOHACK
 	@private
 	@method ingestFile
 	@param {Object} sql connector
