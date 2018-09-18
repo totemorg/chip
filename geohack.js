@@ -89,7 +89,7 @@ var HACK = module.exports = {
 	Chip voxels defined by the pipe = "FILE" || "PIPE NAME" || 
 	
 		{
-			file: "/DATASET?QUERY" || "PLUGIN.CASE" || "FILENAME" || "FILE.jpg" || "FILE.json"  || [ ev, ev, ... ]
+			file: "/DATASET?QUERY" || "PLUGIN.CASE" || "FILENAME" || "FILE.jpg" || "FILE.json"  || [ ev, ev, ... ] || ""
 			group: "KEY,..." || ""  
 			where: { KEY: VALUE, ...} || {}  
 			order: "KEY,..." || "t"  
@@ -322,22 +322,30 @@ var HACK = module.exports = {
 
 			switch ( src.constructor ) {
 				case String: 
-					sql.forEach( get.msg, get.files, src.toQuery(sql,{}), function (file) {  // regulate requested file(s)
+					if (src)
+						sql.forEach( get.msg, get.files, src.toQuery(sql,{}), function (file) {  // regulate requested file(s)
 
-						["stateKeys", "stateSymbols"].parseJSON(file);
-						//Log( "file>>>>>>>", file );
-						
-						if (file._State_Archived) 
-							CP.exec("", function () {  // revise to add a script to cp from lts and unzip
-								Trace("RESTORING "+file.Name);
-								sql.query("UPDATE app.files SET _State_Archived=false WHERE ?", {ID: file.ID});
+							["stateKeys", "stateSymbols"].parseJSON(file);
+							//Log( "file>>>>>>>", file );
+
+							if (file._State_Archived) 
+								CP.exec("", function () {  // revise to add a script to cp from lts and unzip
+									Trace("RESTORING "+file.Name);
+									sql.query("UPDATE app.files SET _State_Archived=false WHERE ?", {ID: file.ID});
+									chipFile(file);
+								});
+
+							else
 								chipFile(file);
-							});
 
-						else
-							chipFile(file);
-
-					});				
+						});	
+					
+					else
+						cb({
+							File: {ID: 0, Name:""},
+							Events: null
+						});
+						
 					break;
 					
 				case Array:  // src contains event list
