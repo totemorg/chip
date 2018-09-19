@@ -84,11 +84,9 @@ var HACK = module.exports = {
 		return hdist(h12, 6137)/2; //  [km]
 	},
 	
-	chipEvents: function ( sql, pipe, cb ) {  
+	chipVoxels: function ( sql, pipe, cb ) {  
 	/**
-	Chip voxels defined by the pipe = "FILE" || "PIPE NAME" || 
-	
-		{
+	Chip voxels defined by the pipe = "FILE" || "PIPE NAME" || 	{
 			file: "/DATASET?QUERY" || "PLUGIN.CASE" || "FILENAME" || "FILE.jpg" || "FILE.json"  || [ ev, ev, ... ] || ""
 			group: "KEY,..." || ""  
 			where: { KEY: VALUE, ...} || {}  
@@ -98,7 +96,7 @@ var HACK = module.exports = {
 			aoi: "NAME" || [ [lat,lon], ... ] || []	
 		}
 	
-	and send voxel meta info {File, Voxel, Events, Flux, Stats, Collects, Chip} for each chipped voxel to cb(meta).
+	to the calback(meta) where voxel meta = {File, Voxel, Events, Flux, Stats, Collects, Chip}.
 	**/
 		function toQuery(q, def) {
 			if ( q  )
@@ -182,8 +180,7 @@ var HACK = module.exports = {
 										make: makeFlux
 									}, function (flux) {
 
-										//Log("got flux", flux);
-										//Log("got flux", voxel);
+										//Log("cached", flux, voxel);
 										if ( pipe.ag )
 											sql.forFirst( // get stats on this file-voxel pair
 												TRACE,
@@ -294,9 +291,8 @@ var HACK = module.exports = {
 					if (file.ID)	// pull all voxels by event refs and stack them by chipID
 						sql.query( get.voxelsByRef, {fileID: file.ID})
 						.on("result", (ev) => {
-							//Log("get ev", ev);
 							sql.forEach( get.msg, get.voxelsByID, {ID: ev.voxelID}, (voxel) => {
-								Log("got vox", voxel);
+								//Log("chipped voxel", voxel);
 								getMeta( aoi, soi, file, voxel );
 							});
 						})
@@ -360,6 +356,7 @@ var HACK = module.exports = {
 					
 					else
 						cb({
+							Voxel: {ID: 0},
 							File: {ID: 0, Name:""},
 							Events: null
 						});
@@ -368,6 +365,7 @@ var HACK = module.exports = {
 					
 				case Array:  // src contains event list
 					cb({
+						Voxel: {ID: 0},
 						File: {ID: 0, Name:""},
 						Events: src
 					});
@@ -375,6 +373,7 @@ var HACK = module.exports = {
 					
 				case Object:  // src contains single event
 					cb({
+						Voxel: {ID: 0},
 						File: {ID: 0, Name:""},
 						Events: [src]
 					});
