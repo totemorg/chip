@@ -116,6 +116,15 @@ var HACK = module.exports = {
 					
 					function getMeta( aoi, soi, file, voxel ) {
 
+						function toJSON(key) {
+							try {
+								return JSON.parse(key);
+							}
+							catch (err) {
+								return null;
+							}
+						}
+						
 						var
 							makeChip = HACK.make.chip,
 							makeFlux = HACK.make.flux,
@@ -529,9 +538,9 @@ var HACK = module.exports = {
 							BR = [aoi.yMin, aoi.xMax], 
 							Ring = [ TL, TR, BR, BL, TL ];
 
-						sql.forAll(  // update file with aoi info
-							"INGEST",
-							"UPDATE app.files SET ?, _Ingest_Samples=_Ingest_Samples+?, _Ingest_Rejects=_Ingest_Rejects+?, Score_Relevance=1-_Ingest_Rejects/_Ingest_Samples WHERE ?", [{ 
+						//Trace("INGESTED "+fileID);
+						sql.query(  // update file with aoi info
+							"UPDATE app.files SET ?, _Ingest_Samples=_Ingest_Samples+?, _Ingest_Rejects=_Ingest_Rejects+?, _Score_Relevance=1-_Ingest_Rejects/_Ingest_Samples WHERE ?", [{ 
 								_Ingest_States: aoi.States,
 								_Ingest_Steps: aoi.Steps,
 								_Ingest_Actors: aoi.Actors,
