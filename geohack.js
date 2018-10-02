@@ -212,7 +212,7 @@ var HACK = module.exports = {
 										else
 											sql.forEach( // get each voxel above this chip
 												TRACE,
-												"SELECT * FROM app.voxels WHERE ?",
+												"SELECT * FROM app.voxels WHERE ? AND enabled",
 												[ {chipID: voxel.chipID} ], function (voxel) {
 
 													//Log("vox above", voxel);
@@ -300,10 +300,16 @@ var HACK = module.exports = {
 					if (file.ID)	// pull all voxels by event refs and stack them by chipID
 						sql.query( get.voxelsByRef, {fileID: file.ID})
 						.on("result", (ev) => {
-							sql.forEach( get.msg, get.voxelsByID, {ID: ev.voxelID}, (voxel) => {
-								//Log("chipped voxel", voxel);
-								getMeta( aoi, soi, file, voxel );
-							});
+							if ( ev.voxelID )
+								sql.forEach( get.msg, get.voxelsByID, {ID: ev.voxelID}, (voxel) => {
+									//Log("chipped voxel", voxel);
+									getMeta( aoi, soi, file, voxel );
+								});
+							
+							else
+								sql.forEach( get.msg, get.dummyVoxels, [ ], (voxel) => {
+									getMeta( aoi, soi, file, voxel );
+								});
 						})
 						.on("error", (err) => Log("youch", err) );
 					
@@ -334,9 +340,9 @@ var HACK = module.exports = {
 					//chips: `SELECT ${group} FROM app.events GROUP BY ${group} `,
 					//voxels: "SELECT * FROM app.voxels WHERE ?", 
 					voxelsByRef: "SELECT voxelID FROM app.events WHERE ? GROUP BY voxelID",
-					voxelsByID: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE ? GROUP BY chipID",
-					surfaceVoxels: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID ORDER BY ID",
-					dummyVoxels: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE Ring IS null GROUP BY chipID ORDER BY ID",
+					voxelsByID: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE ? AND enabled GROUP BY chipID",
+					surfaceVoxels: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) AND enabled GROUP BY chipID ORDER BY ID",
+					dummyVoxels: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE Ring IS null AND enabled GROUP BY chipID ORDER BY ID",
 					//agVoxels: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID",
 					//chips: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) ORDER BY ID",
 					files: "SELECT * FROM app.files WHERE least(?,1)",
@@ -437,7 +443,8 @@ var HACK = module.exports = {
 						+ "LEFT JOIN app.voxels ON least( " + [
 								"MBRcontains(voxels.Ring,point(evcache.x,evcache.y))" ,
 								"evcache.z BETWEEN voxels.alt AND voxels.alt+voxels.height",
-								"voxels.class = evcache.class"
+								"voxels.classID = evcache.k",
+								"voxels.enabled"
 							].join(", ") + ") WHERE ? HAVING voxelID"
 
 				// bypass voxelization
@@ -455,10 +462,10 @@ var HACK = module.exports = {
 				+ "min(x) AS xMin, max(x) AS xMax, "		// lat [degs]
 				+ "min(y) AS yMin, max(y) AS yMax, "		// lon [degs]
 				+ "min(z) AS zMin, max(z) AS zMax, "		// alt [km]
-				+ "floor(max(s)) AS Steps, "		// ms steps
-				+ "max(`state`)+1 AS States, "
-				+ "max(`index`)+1 AS Actors, "
-				+ "count(id) AS Samples "
+				+ "floor(max(t)) AS Steps, "		// steps [ms]
+				+ "max(u)+1 AS States, "		// number of states
+				+ "max(n)+1 AS Actors, "		// ensemble size
+				+ "count(id) AS Samples "		// samples ingested
 				+ "FROM app.evcache WHERE ?", 
 				
 				[ ingest.affectedRows, {fileID:fileID} ],	cb);
@@ -497,11 +504,11 @@ var HACK = module.exports = {
 									x: ev.x || 0,		// lat [degs]
 									y: ev.y || 0,		// lon [degs]
 									z: ev.z || 0,		// alt [km]
-									t: ev.t,		// sample time [ms]
-									s: ev.s || (ev.t - refTime), 		// relative steps [ms]
-									class: ev.class || 0, // class type
-									index: ev.index || 0,		// unqiue id 
-									state: ev.state || 0,		// current state 
+									t: ev.t || 0,		// sample time [ms]
+									//s: ev.s || (ev.t - refTime), 		// relative steps [ms]
+									n: ev.n || 0,		// unqiue id 
+									u: ev.u || 0,		// current state 
+									k: ev.k || 0, // class type
 									fileID: fileID		// source file
 								}
 							] );
@@ -959,6 +966,7 @@ var HACK = module.exports = {
 				sql.query(
 					//"INSERT INTO app.voxels SET ?, Ring=GeomFromText(?), Anchor=GeomFromText(?)", [{
 					"INSERT INTO app.voxels SET ?, Ring=GeomFromText(?)", [{
+					enabled: true,
 					class: aoicase.Name,
 					lon: chip.lon,
 					lat: chip.lat,
