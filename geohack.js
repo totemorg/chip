@@ -86,8 +86,11 @@ var HACK = module.exports = {
 	
 	chipVoxels: function ( sql, pipe, cb ) {  
 	/**
-	Chip voxels defined by the pipe = "FILE" || "PIPE NAME" || 	{
-			file: "/DATASET?QUERY" || "PLUGIN.CASE" || "FILENAME" || "FILE.jpg" || "FILE.json"  || [ ev, ev, ... ] || ""
+	Chip voxels defined by the pipe:
+	
+		"PIPE NAME" || 	
+		{
+			file: "PLUGIN.CASE" || "/DATASET?QUERY" || [ ev, ev, ... ] || ev
 			group: "KEY,..." || ""  
 			where: { KEY: VALUE, ...} || {}  
 			order: "KEY,..." || "t"  
@@ -96,8 +99,9 @@ var HACK = module.exports = {
 			aoi: "NAME" || [ [lat,lon], ... ] || []	
 		}
 	
-	to the calback(meta) where voxel meta = {File, Voxel, Events, Flux, Stats, Collects, Chip}.
+	with calbacks to cb({File, Voxel, Events, Flux, Stats, Collects, Chip}) for each voxel accessed.
 	**/
+		/*
 		function toQuery(q, def) {
 			if ( q  )
 				return (typeof q == "string") 
@@ -106,10 +110,8 @@ var HACK = module.exports = {
 			
 			else
 				return def;
-		}
+		}  */
 		
-		function chipJob( pipe ) {
-
 			function chipFile( file ) { 
 				
 				function chipVoxels( aoi, voi, soi) {
@@ -330,11 +332,11 @@ var HACK = module.exports = {
 			}
 			
 			var 
-				group = pipe.group,
-				soi = toQuery(pipe.soi, {Name: ""} ),
-				aoi = toQuery(pipe.aoi, {Name: ""} ),
-				voi = toQuery(pipe.voi, {Alt:0, Class:0, Ag:0}),
-				src = pipe.file || pipe.source || "",
+				//group = pipe.group,
+				//soi = toQuery(pipe.soi, {Name: ""} ),
+				//aoi = toQuery(pipe.aoi, {Name: ""} ),
+				//voi = toQuery(pipe.voi, {Alt:0, Class:0, Ag:0}),
+				//src = pipe.file || pipe.source || "",
 				get = {
 					rings: "SELECT Ring FROM app.aois WHERE ?",
 					//chips: `SELECT ${group} FROM app.events GROUP BY ${group} `,
@@ -345,17 +347,27 @@ var HACK = module.exports = {
 					dummyVoxels: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE Ring IS null AND enabled GROUP BY chipID ORDER BY ID",
 					//agVoxels: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID",
 					//chips: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) ORDER BY ID",
-					files: "SELECT * FROM app.files WHERE least(?,1)",
+					files: "SELECT * FROM app.files WHERE Name LIKE '?' ",
 					msg: TRACE
 				};
 
-			switch ( src.constructor ) {
+			switch ( pipe.constructor ) {
 				case String: 
-					if (src)
-						sql.forEach( get.msg, get.files, src.toQuery(sql,{}), function (file) {  // regulate requested file(s)
+					
+					if ( pipe.charAt(0) == "/" ) 
+						fetcher( pipe, (evs) => {		// fetch events and return them to callback
+							cb({
+								Voxel: {ID: 0},
+								File: {ID: 0, Name:""},
+								Events: evs.parseJSON( [] )
+							});
+						});
+
+					else 
+						sql.forEach( get.msg, get.files, pipe , (file) => {  // regulate requested file(s)
 
 							["stateKeys", "stateSymbols"].parseJSON(file);
-							//Log( "file>>>>>>>", file );
+							Log( "chip file>>>", file );
 
 							if (file._State_Archived) 
 								CP.exec("", function () {  // revise to add a script to cp from lts and unzip
@@ -368,14 +380,7 @@ var HACK = module.exports = {
 								chipFile(file);
 
 						});	
-					
-					else
-						cb({
-							Voxel: {ID: 0},
-							File: {ID: 0, Name:""},
-							Events: null
-						});
-						
+
 					break;
 					
 				case Array:  // src contains event list
@@ -395,37 +400,38 @@ var HACK = module.exports = {
 					break;
 			}
 
-		}
+		/*
+		function chipJob( pipe ) {
+			switch ( pipe.constructor ) {
+				case String:
+					if ( pipe.indexOf(".") >= 0 )
+						chipJob({ file: pipe });
 
-		switch ( pipe.constructor ) {
-			case String:
-				if ( pipe.charAt(0) == "/" )
-					chipJob({ file: pipe });
-					
-				else
-				if ( pipe.indexOf(".") >= 0 )
-					chipJob({ file: pipe });
-				
-				else
-					sql.forEach( TRACE, "SELECT pipe FROM app.pipes WHERE ?", {Name:pipe}, function (rec) {
-						try {
-							chipJob( JSON.parse(rec.pipe) );
-						}
-						catch (err) {
-						}
+					else
+						sql.forEach( TRACE, "SELECT pipe FROM app.pipes WHERE ?", {Name:pipe}, function (rec) {
+							try {
+								chipJob( JSON.parse(rec.pipe) );
+							}
+							catch (err) {
+							}
+						});
+
+					break;
+
+				case Array:
+					cb({
+						Voxel: {ID: 0},
+						File: {ID: 0, Name:""},
+						Events: pipe
 					});
-				break;
-			
-			case Array:
-				chipJob({
-					file: pipe
-				});
-				break
-			
-			case Object:
-				chipJob( pipe );
-				break;
-		}
+
+					break
+
+				case Object:
+					chipJob( pipe );
+					break;
+			}  
+		}   */
 	},
 	
 	ingestCache: function (sql, fileID, cb) { 
