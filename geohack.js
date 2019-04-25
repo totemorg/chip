@@ -101,20 +101,20 @@ var HACK = module.exports = {
 	
 	with calbacks to cb({File, Voxel, Events, Flux, Stats, Collects, Chip}) for each voxel accessed.
 	**/
-		/*
-		function toQuery(q, def) {
-			if ( q  )
-				return (typeof q == "string") 
-					? q.toQuery(sql, def)
-					: Copy(q, def);
-			
-			else
-				return def;
-		}  */
+			/*
+			function toQuery(q, def) {
+				if ( q  )
+					return (typeof q == "string") 
+						? q.toQuery(sql, def)
+						: Copy(q, def);
+
+				else
+					return def;
+			}  */
 		
-			function chipFile( file ) { 
+			function chipFile( file , query ) { 
 				
-				function chipVoxels( aoi, voi, soi) {
+				function chipVoxels( aoi, voi, soi, ag) {
 					
 					function getMeta( aoi, soi, file, voxel ) {
 
@@ -265,7 +265,7 @@ var HACK = module.exports = {
 			
 					//Log("chip", {aoi: aoi, voi: voi, soi: soi, pipe:pipe, file:file} );
 					
-					if (pipe.ag) 
+					if (ag) 
 						sql.forEach( get.msg, get.surfaceVoxels, [ toPolygon(aoi), {Class:voi.Class, Alt:0, Ag:1} ], (voxel) => {
 
 							sql.forAll( get.msg, get.surfaceVoxels, [ toPolygon(aoi), voi ], (voxels) => {
@@ -322,13 +322,19 @@ var HACK = module.exports = {
 					
 				}
 				
-				if (aoi.Name)  // pull all events inside aoi by name
-					sql.forEach( get.msg, get.rings, {Name:aoi.Name}, function (rec) {
-						chipVoxels( JSON.parse(rec.Ring) , voi, soi );
+				var
+					aoi = query.aoi || [],
+					soi = query.soi,
+					voi = query.voi,
+					ag = query.ag;
+				
+				if (aoi.constructor == String)  // pull all events inside aoi by name
+					sql.forEach( get.msg, get.rings, {Name:aoi}, function (rec) {
+						chipVoxels( JSON.parse(rec.Ring) , voi, soi, ag );
 					});
 
 				else   // pull all events inside aoi
-					chipVoxels( aoi, voi, soi );
+					chipVoxels( aoi, voi, soi, ag );
 			}
 			
 			var 
@@ -363,8 +369,13 @@ var HACK = module.exports = {
 							});
 						});
 
-					else 
-						sql.forEach( get.msg, get.files, pipe , (file) => {  // regulate requested file(s)
+					else {
+						var
+							query = {},
+							filename = pipe.parsePath(query),
+							metas = [];
+						
+						sql.forEach( get.msg, get.files, filename , (file) => {		// regulate requested file(s)
 
 							["stateKeys", "stateSymbols"].parseJSON(file);
 							Log( "chip file>>>", file );
@@ -373,13 +384,13 @@ var HACK = module.exports = {
 								CP.exec("", function () {  // revise to add a script to cp from lts and unzip
 									Trace("RESTORING "+file.Name);
 									sql.query("UPDATE app.files SET _State_Archived=false WHERE ?", {ID: file.ID});
-									chipFile(file);
+									chipFile(file, query);
 								});
 
 							else
-								chipFile(file);
-
-						});	
+								chipFile(file, query);
+						});
+					}
 
 					break;
 					
