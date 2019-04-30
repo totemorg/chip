@@ -21,7 +21,7 @@ var
 	// totem modules
 	LWIP = require('glwip');
 
-const { Copy,Each,Log } = require("enum");
+const { Copy,Each,Log,isString,isArray } = require("enum");
 
 var HACK = module.exports = {
 	
@@ -99,7 +99,7 @@ var HACK = module.exports = {
 			aoi: "NAME" || [ [lat,lon], ... ] || []	
 		}
 	
-	with calbacks to cb({File, Voxel, Events, Flux, Stats, Collects, Chip}) for each voxel accessed.
+	with calbacks to cb({File, Voxel, Events, Flux, Stats, Sensor, Chip}) for each voxel accessed.
 	**/
 			/*
 			function toQuery(q, def) {
@@ -206,7 +206,7 @@ var HACK = module.exports = {
 															[{fileID: file.ID}, toPolygon(aoi), limit, offset]  ),
 													Flux: flux,
 													Stats: stats,
-													Collects: collects,
+													Sensor: collects,
 													Chip: chip
 												});
 											});
@@ -231,7 +231,7 @@ var HACK = module.exports = {
 																	[{voxelID: voxel.ID, fileID: file.ID}, limit, offset]  ), 
 															Flux: flux,
 															Stats: stats,
-															Collects: collects,
+															Sensor: collects,
 															Chip: chip
 														});
 
@@ -328,7 +328,7 @@ var HACK = module.exports = {
 					voi = query.voi,
 					ag = query.ag;
 				
-				if (aoi.constructor == String)  // pull all events inside aoi by name
+				if ( isString(aoi) )  // pull all events inside aoi by name
 					sql.forEach( get.msg, get.rings, {Name:aoi}, function (rec) {
 						chipVoxels( JSON.parse(rec.Ring) , voi, soi, ag );
 					});
@@ -343,6 +343,7 @@ var HACK = module.exports = {
 				//aoi = toQuery(pipe.aoi, {Name: ""} ),
 				//voi = toQuery(pipe.voi, {Alt:0, Class:0, Ag:0}),
 				//src = pipe.file || pipe.source || "",
+				fetcher = HACK.fetcher,
 				get = {
 					rings: "SELECT Ring FROM app.aois WHERE ?",
 					//chips: `SELECT ${group} FROM app.events GROUP BY ${group} `,
@@ -353,7 +354,7 @@ var HACK = module.exports = {
 					dummyVoxels: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE Ring IS null AND enabled GROUP BY chipID ORDER BY ID",
 					//agVoxels: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID",
 					//chips: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) ORDER BY ID",
-					files: "SELECT * FROM app.files WHERE Name LIKE '?' ",
+					files: "SELECT * FROM app.files WHERE Name LIKE ? ",
 					msg: TRACE
 				};
 
@@ -361,7 +362,7 @@ var HACK = module.exports = {
 				case String: 
 					
 					if ( pipe.charAt(0) == "/" ) 
-						fetcher( pipe, (evs) => {		// fetch events and return them to callback
+						fetcher( pipe, null, null, (evs) => {		// fetch events and return them to callback
 							cb({
 								Voxel: {ID: 0},
 								File: {ID: 0, Name:""},
@@ -680,6 +681,7 @@ var HACK = module.exports = {
 	},	
 			
 	thread: () => { Trace("sql thread not configured"); },  //< sql threader
+	fetcher: () => { Trace("data fetcher not configured"); },  //< data fetcher
 	
 	errors: {
 		nowfs: new Error("chipping cataloge service failed"),
@@ -719,7 +721,7 @@ var HACK = module.exports = {
 		}
 		
 		function border(img, pad, cb) {
-			if (pad.constructor == Array) 
+			if ( isArray(pad) ) 
 				pad.each(function (n,val) {
 					img.clone(function (err,image) {
 						border(image, val, cb);
