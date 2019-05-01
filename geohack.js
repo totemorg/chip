@@ -101,249 +101,219 @@ var HACK = module.exports = {
 	
 	with calbacks to cb({File, Voxel, Events, Flux, Stats, Sensor, Chip}) for each voxel accessed.
 	**/
-			/*
-			function toQuery(q, def) {
-				if ( q  )
-					return (typeof q == "string") 
-						? q.toQuery(sql, def)
-						: Copy(q, def);
+			function chipper( aoi, voi, soi, ag) {
 
-				else
-					return def;
-			}  */
-		
-			function chipFile( file , query ) { 
-				
-				function chipVoxels( aoi, voi, soi, ag) {
-					
-					function getMeta( aoi, soi, file, voxel ) {
+				function getMeta( aoi, soi, file, voxel ) {
 
-						function toJSON(key) {
-							try {
-								return JSON.parse(key);
-							}
-							catch (err) {
-								return null;
-							}
+					function toJSON(key) {
+						try {
+							return JSON.parse(key);
 						}
-						
-						var
-							makeChip = HACK.make.chip,
-							makeFlux = HACK.make.flux,
-							makeCollects = HACK.make.collects,
-							limit = pipe.limit || 1000,
-							offset = pipe.offset || 0,
-							order = pipe.order || "t",
-							fields = pipe.fields || "*";
+						catch (err) {
+							return null;
+						}
+					}
 
-						if (voxel.chipID)
-							sql.cache({  // cache sensor info at chip under this voxel
+					var
+						makeChip = HACK.make.chip,
+						makeFlux = HACK.make.flux,
+						makeCollects = HACK.make.collects,
+						limit = pipe.limit || 1000,
+						offset = pipe.offset || 0,
+						order = pipe.order || "t",
+						fields = pipe.fields || "*";
+
+					if (voxel.chipID)
+						sql.cache({  // cache sensor info at chip under this voxel
+							key: {
+								Name1: "collects", 
+								Index1: voxel.chipID,
+								Name1: JSON.stringify(soi),
+								t: 0
+							},
+							parms: Copy(soi, { 
+								ring: aoi
+							}),
+							default: [],
+							make: makeCollects
+						}, function (collects) {
+
+							//Log(voxel.Ring, collects);
+							var
+								Ring = toRing( voxel.Ring );
+
+							sql.cache({  // cache image chip under this voxel
 								key: {
-									Name1: "collects", 
-									Index1: voxel.chipID,
-									Name1: JSON.stringify(soi),
+									Name1: "chip", 
+									x1: voxel.lon, 
+									x2: voxel.lat,
 									t: 0
 								},
-								parms: Copy(soi, { 
-									ring: aoi
-								}),
-								default: [],
-								make: makeCollects
-							}, function (collects) {
+								parms: { 
+									path: `./public/images/chips/${voxel.chipID}.jpeg`,
+									bbox: toBBox( Ring ),
+									ring: toPolygon( Ring ),
+									lat: voxel.lat,
+									lon: voxel.lon
+								},
+								default: {
+									path: (collects[0] || {url: "./shares/spoof.jpg"}).url									
+								},
+								make: makeChip
+							}, function (chip) {
 
-								//Log(voxel.Ring, collects);
-								var
-									Ring = toRing( voxel.Ring );
-
-								sql.cache({  // cache image chip under this voxel
+								sql.cache({  // cache solar flux information at this chip
 									key: {
-										Name1: "chip", 
+										Name1: "flux", 
 										x1: voxel.lon, 
 										x2: voxel.lat,
 										t: 0
 									},
 									parms: { 
-										path: `./public/images/chips/${voxel.chipID}.jpeg`,
-										bbox: toBBox( Ring ),
-										ring: toPolygon( Ring ),
 										lat: voxel.lat,
-										lon: voxel.lon
+										lon: voxel.lon,
+										tod: new Date()
 									},
-									default: {
-										path: (collects[0] || {url: "./shares/spoof.jpg"}).url									
-									},
-									make: makeChip
-								}, function (chip) {
+									default: null,
+									make: makeFlux
+								}, function (flux) {
 
-									sql.cache({  // cache solar flux information at this chip
-										key: {
-											Name1: "flux", 
-											x1: voxel.lon, 
-											x2: voxel.lat,
-											t: 0
-										},
-										parms: { 
-											lat: voxel.lat,
-											lon: voxel.lon,
-											tod: new Date()
-										},
-										default: null,
-										make: makeFlux
-									}, function (flux) {
+									//Log("cached", flux, voxel);
+									if ( pipe.ag )
+										sql.forFirst( // get stats on this file-voxel pair
+											TRACE,
+											"SELECT * FROM app._stats WHERE least(?)", 
+											[ {fileID: file.ID, voxelID: voxel.ID} ], function (stats) {
 
-										//Log("cached", flux, voxel);
-										if ( pipe.ag )
-											sql.forFirst( // get stats on this file-voxel pair
-												TRACE,
-												"SELECT * FROM app._stats WHERE least(?)", 
-												[ {fileID: file.ID, voxelID: voxel.ID} ], function (stats) {
-
-												cb({
-													File: file,
-													Voxel: voxel,
-													Events: sql.format(
-															`SELECT ${fields} FROM app.events WHERE ? AND MBRcontains(geomfromtext(?),Point(x,y)) ORDER BY ${order} LIMIT ? OFFSET ?`,
-															[{fileID: file.ID}, toPolygon(aoi), limit, offset]  ),
-													Flux: flux,
-													Stats: stats,
-													Sensor: collects,
-													Chip: chip
-												});
+											cb({
+												File: file,
+												Voxel: voxel,
+												Events: sql.format(
+														`SELECT ${fields} FROM app.events WHERE ? AND MBRcontains(geomfromtext(?),Point(x,y)) ORDER BY ${order} LIMIT ? OFFSET ?`,
+														[{fileID: file.ID}, toPolygon(aoi), limit, offset]  ),
+												Flux: flux,
+												Stats: stats,
+												Sensor: collects,
+												Chip: chip
 											});
+										});
 
-										else
-											sql.forEach( // get each voxel above this chip
-												TRACE,
-												"SELECT * FROM app.voxels WHERE ? AND enabled",
-												[ {chipID: voxel.chipID} ], function (voxel) {
+									else
+										sql.forEach( // get each voxel above this chip
+											TRACE,
+											"SELECT * FROM app.voxels WHERE ? AND enabled",
+											[ {chipID: voxel.chipID} ], function (voxel) {
 
-													//Log("vox above", voxel);
-													sql.forFirst( // get stats on this file-voxel pair
-														TRACE,
-														"SELECT * FROM app._stats WHERE least(?)", 
-														[ {fileID: file.ID, voxelID: voxel.ID} ], function (stats) {
+												//Log("vox above", voxel);
+												sql.forFirst( // get stats on this file-voxel pair
+													TRACE,
+													"SELECT * FROM app._stats WHERE least(?)", 
+													[ {fileID: file.ID, voxelID: voxel.ID} ], function (stats) {
 
-														cb({
-															File: file,
-															Voxel: voxel,
-															Events: sql.format(	
-																	`SELECT ${fields} FROM app.events WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
-																	[{voxelID: voxel.ID, fileID: file.ID}, limit, offset]  ), 
-															Flux: flux,
-															Stats: stats,
-															Sensor: collects,
-															Chip: chip
-														});
+													cb({
+														File: file,
+														Voxel: voxel,
+														Events: sql.format(	
+																`SELECT ${fields} FROM app.events WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
+																[{voxelID: voxel.ID, fileID: file.ID}, limit, offset]  ), 
+														Flux: flux,
+														Stats: stats,
+														Sensor: collects,
+														Chip: chip
+													});
 
-														/*if (hypo) {  // test chipID if over ground truth site then start a ROC workflow
-														} */
-													}); 
-												});	
+													/*if (hypo) {  // test chipID if over ground truth site then start a ROC workflow
+													} */
+												}); 
+											});	
 
-									});
 								});
-
-							});
-						
-						else
-							sql.forFirst( // get stats on this file-voxel pair
-								TRACE,
-								"SELECT * FROM app._stats WHERE least(?)", 
-								[ {fileID: file.ID, voxelID: voxel.ID} ], function (stats) {
-
-								cb({
-									File: file,
-									Voxel: voxel,
-									Events: sql.format(	
-											`SELECT ${fields} FROM app.events WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
-											[{voxelID: voxel.ID, fileID: file.ID}, limit, offset]  ), 
-									Stats: stats
-								});
-							}); 
-							
-					}
-			
-					//Log("chip", {aoi: aoi, voi: voi, soi: soi, pipe:pipe, file:file} );
-					
-					if (ag) 
-						sql.forEach( get.msg, get.surfaceVoxels, [ toPolygon(aoi), {Class:voi.Class, Alt:0, Ag:1} ], (voxel) => {
-
-							sql.forAll( get.msg, get.surfaceVoxels, [ toPolygon(aoi), voi ], (voxels) => {
-							
-								var 
-									states = file.Stats_stateSymbols = [],
-									keys = file.Stats_stateKeys = {index:"index", state:"voxelID"};
-
-								voxels.forEach( (voxel) => {
-									states.push(voxel.ID);
-								});
-
-								Log("chip states", voxel.ID, states);
-								//cb( null, aoi, soi, file, voxel );
-								getMeta( aoi, soi, file, voxel );
-								
 							});
 
 						});
-						
+
 					else
-					if (aoi.length)		// pull all surface voxels falling in specified aoi and of specified class
-						sql.forEach( get.msg, get.surfaceVoxels, [ toPolygon(aoi), voi ], (voxel) => {							
-							getMeta( aoi, soi, file, voxel );
-						});
-					
-					else
-					if (file.Ring)		// pull all surface voxels over specified file
-						sql.forEach( get.msg, get.surfaceVoxels, [ toPolygon(toRing(file.Ring)), voi ], (voxel) => {
-							getMeta( aoi, soi, file, voxel );
-						});
-					
-					else
-					if (file.ID)	// pull all voxels by event refs and stack them by chipID
-						sql.query( get.voxelsByRef, {fileID: file.ID})
-						.on("result", (ev) => {
-							if ( ev.voxelID )
-								sql.forEach( get.msg, get.voxelsByID, {ID: ev.voxelID}, (voxel) => {
-									//Log("chipped voxel", voxel);
-									getMeta( aoi, soi, file, voxel );
-								});
-							
-							else
-								sql.forEach( get.msg, get.dummyVoxels, [ ], (voxel) => {
-									getMeta( aoi, soi, file, voxel );
-								});
-						})
-						.on("error", (err) => Log("youch", err) );
-					
-					else
-						sql.forEach( get.msg, get.dummyVoxels, [ ], (voxel) => {
-							getMeta( aoi, soi, file, voxel );
-						});
-					
+						sql.forFirst( // get stats on this file-voxel pair
+							TRACE,
+							"SELECT * FROM app._stats WHERE least(?)", 
+							[ {fileID: file.ID, voxelID: voxel.ID} ], function (stats) {
+
+							cb({
+								File: file,
+								Voxel: voxel,
+								Events: sql.format(	
+										`SELECT ${fields} FROM app.events WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
+										[{voxelID: voxel.ID, fileID: file.ID}, limit, offset]  ), 
+								Stats: stats
+							});
+						}); 
+
 				}
-				
-				var
-					aoi = query.aoi || [],
-					soi = query.soi,
-					voi = query.voi,
-					ag = query.ag;
-				
-				if ( isString(aoi) )  // pull all events inside aoi by name
-					sql.forEach( get.msg, get.rings, {Name:aoi}, function (rec) {
-						chipVoxels( JSON.parse(rec.Ring) , voi, soi, ag );
+
+				//Log("chip", {aoi: aoi, voi: voi, soi: soi, pipe:pipe, file:file} );
+
+				if (ag) 
+					sql.forEach( get.msg, get.surfaceVoxels, [ toPolygon(aoi), {Class:voi.Class, Alt:0, Ag:1} ], (voxel) => {
+
+						sql.forAll( get.msg, get.surfaceVoxels, [ toPolygon(aoi), voi ], (voxels) => {
+
+							var 
+								states = file.Stats_stateSymbols = [],
+								keys = file.Stats_stateKeys = {index:"index", state:"voxelID"};
+
+							voxels.forEach( (voxel) => {
+								states.push(voxel.ID);
+							});
+
+							Log("chip states", voxel.ID, states);
+							//cb( null, aoi, soi, file, voxel );
+							getMeta( aoi, soi, file, voxel );
+
+						});
+
 					});
 
-				else   // pull all events inside aoi
-					chipVoxels( aoi, voi, soi, ag );
+				else
+				if (aoi.length)		// pull all surface voxels falling in specified aoi and of specified class
+					sql.forEach( get.msg, get.surfaceVoxels, [ toPolygon(aoi), voi ], (voxel) => {							
+						getMeta( aoi, soi, file, voxel );
+					});
+
+				else
+				if (file.Ring)		// pull all surface voxels over specified file
+					sql.forEach( get.msg, get.surfaceVoxels, [ toPolygon(toRing(file.Ring)), voi ], (voxel) => {
+						getMeta( aoi, soi, file, voxel );
+					});
+
+				else
+				if (file.ID)	// pull all voxels by event refs and stack them by chipID
+					sql.query( get.voxelsByRef, {fileID: file.ID})
+					.on("result", (ev) => {
+						if ( ev.voxelID )
+							sql.forEach( get.msg, get.voxelsByID, {ID: ev.voxelID}, (voxel) => {
+								//Log("chipped voxel", voxel);
+								getMeta( aoi, soi, file, voxel );
+							});
+
+						else
+							sql.forEach( get.msg, get.dummyVoxels, [ ], (voxel) => {
+								getMeta( aoi, soi, file, voxel );
+							});
+					})
+					.on("error", (err) => Log("youch", err) );
+
+				else
+					sql.forEach( get.msg, get.dummyVoxels, [ ], (voxel) => {
+						getMeta( aoi, soi, file, voxel );
+					});
+
 			}
-			
-			var 
-				//group = pipe.group,
-				//soi = toQuery(pipe.soi, {Name: ""} ),
-				//aoi = toQuery(pipe.aoi, {Name: ""} ),
-				//voi = toQuery(pipe.voi, {Alt:0, Class:0, Ag:0}),
-				//src = pipe.file || pipe.source || "",
-				fetcher = HACK.fetcher,
+				
+			var
+				aoi = pipe.aoi,
+				soi = pipe.soi,
+				voi = pipe.voi,
+				ag = pipe.ag,
 				get = {
 					rings: "SELECT Ring FROM app.aois WHERE ?",
 					//chips: `SELECT ${group} FROM app.events GROUP BY ${group} `,
@@ -354,96 +324,18 @@ var HACK = module.exports = {
 					dummyVoxels: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE Ring IS null AND enabled GROUP BY chipID ORDER BY ID",
 					//agVoxels: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) GROUP BY chipID",
 					//chips: "SELECT ID,lon,lat,alt,chipID,Ring FROM app.voxels WHERE MBRcontains(GeomFromText(?), voxels.Ring) AND least(?,1) ORDER BY ID",
-					files: "SELECT * FROM app.files WHERE Name LIKE ? ",
+					//files: "SELECT * FROM app.files WHERE Name LIKE ? ",
 					msg: TRACE
 				};
-
-			switch ( pipe.constructor ) {
-				case String: 
-					
-					if ( pipe.charAt(0) == "/" ) 
-						fetcher( pipe, null, null, (evs) => {		// fetch events and return them to callback
-							cb({
-								Voxel: {ID: 0},
-								File: {ID: 0, Name:""},
-								Events: evs.parseJSON( [] )
-							});
-						});
-
-					else {
-						var
-							query = {},
-							filename = pipe.parsePath(query),
-							metas = [];
-						
-						sql.forEach( get.msg, get.files, filename , (file) => {		// regulate requested file(s)
-
-							["stateKeys", "stateSymbols"].parseJSON(file);
-							Log( "chip file>>>", file );
-
-							if (file._State_Archived) 
-								CP.exec("", function () {  // revise to add a script to cp from lts and unzip
-									Trace("RESTORING "+file.Name);
-									sql.query("UPDATE app.files SET _State_Archived=false WHERE ?", {ID: file.ID});
-									chipFile(file, query);
-								});
-
-							else
-								chipFile(file, query);
-						});
-					}
-
-					break;
-					
-				case Array:  // src contains event list
-					cb({
-						Voxel: {ID: 0},
-						File: {ID: 0, Name:""},
-						Events: src
-					});
-					break;
-					
-				case Object:  // src contains single event
-					cb({
-						Voxel: {ID: 0},
-						File: {ID: 0, Name:""},
-						Events: [src]
-					});
-					break;
-			}
-
-		/*
-		function chipJob( pipe ) {
-			switch ( pipe.constructor ) {
-				case String:
-					if ( pipe.indexOf(".") >= 0 )
-						chipJob({ file: pipe });
-
-					else
-						sql.forEach( TRACE, "SELECT pipe FROM app.pipes WHERE ?", {Name:pipe}, function (rec) {
-							try {
-								chipJob( JSON.parse(rec.pipe) );
-							}
-							catch (err) {
-							}
-						});
-
-					break;
-
-				case Array:
-					cb({
-						Voxel: {ID: 0},
-						File: {ID: 0, Name:""},
-						Events: pipe
+		
+			if (aoi)
+				if ( isString(aoi) )  // pull all events inside aoi by name
+					sql.forEach( get.msg, get.rings, {Name:aoi}, function (rec) {
+						chipper( JSON.parse(rec.Ring) , voi, soi, ag );
 					});
 
-					break
-
-				case Object:
-					chipJob( pipe );
-					break;
-			}  
-		}   */
+				else   // pull all events inside aoi
+					chipper( aoi, voi, soi, ag );
 	},
 	
 	ingestCache: function (sql, fileID, cb) { 
@@ -681,7 +573,6 @@ var HACK = module.exports = {
 	},	
 			
 	thread: () => { Trace("sql thread not configured"); },  //< sql threader
-	fetcher: () => { Trace("data fetcher not configured"); },  //< data fetcher
 	
 	errors: {
 		nowfs: new Error("chipping cataloge service failed"),
