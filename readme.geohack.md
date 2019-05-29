@@ -19,11 +19,11 @@ Clone [ENUM enumerators](https://github.com/acmesds/enum) into your PROJECT/enum
 * openv.riddles Builds on config() and reads when clients arrive  
 * openv.apps Reads on config() to override GEOHACK options and define site context parameters
 
-### Configure Environment and Unit test
+### Manage 
 
-	npm run edit
-	npm run start
-	npm test [? || G1 || G2 || ...]
+	npm run [ edit || start ]			# Configure environment
+	npm test [? || G1 || G2 || ...]			# unit test
+	npm run [ prmprep || prmload ]		# Revise PRM
 	
 ## Usage
 
