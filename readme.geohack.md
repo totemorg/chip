@@ -7,23 +7,25 @@
 	
 # GEOHACK
 
-## Installing
+## Installation
 
-Clone from one of the repos into your PROJECT/geohack, then:
+Clone [GEOHACK chipper](https://github.com/acmesds/geohack) into your PROJECT/geohack folder.  
+Clone [ENUM enumerators](https://github.com/acmesds/enum) into your PROJECT/enum folder.  
 
-	cd PROJECT/geohack
-	ln -s PROJECT/totem/test.js test.js 			# unit testing
-	ln -s PROJECT/totem/maint.sh maint.sh 		# test startup and maint scripts
+### Required MySQL Databases
 
-Dependencies:
-
-* [ENUM basic enumerators](https://github.com/acmesds/enum)
 * openv.profiles Reads and populates when clients arrive  
 * openv.sessions Reads and populates when client sessions are established  
 * openv.riddles Builds on config() and reads when clients arrive  
 * openv.apps Reads on config() to override GEOHACK options and define site context parameters
 
-## Using
+### Configure Environment and Unit test
+
+	npm run edit
+	npm run start
+	npm test [? || G1 || G2 || ...]
+	
+## Usage
 
 Each configuration follow the 
 [ENUM deep copy() conventions](https://github.com/acmesds/enum):

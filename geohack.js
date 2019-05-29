@@ -6,7 +6,7 @@
  * @requires child_process
  * @requires stream
  * @requires enum
- * @requires glwip
+ * @requires jimp
  */
 var   
 	// globals
@@ -19,7 +19,8 @@ var
 	STREAM = require("stream"),
 
 	// totem modules
-	LWIP = require('glwip');
+	//JIMP = require('glwip');
+	JIMP = require("jimp");
 
 const { Copy,Each,Log,isString,isArray } = require("enum");
 
@@ -654,7 +655,7 @@ var HACK = module.exports = {
 		}
 		
 		function open(src, args, cb) {
-			LWIP.open(src, "jpg", function (err,img) {
+			JIMP.open(src, "jpg", function (err,img) {
 				if (err)
 					console.log(err);
 				else
@@ -1382,7 +1383,7 @@ function util(sql, runopt, input, rots, pads, flips) {  //< supports GX unit tes
 		plop=0, plops=flips.length * rots.length * pads.length,
 		now = new Date();
 
-	LWIP.open("backgrd.jpg", "jpg", function (err,bg) {
+	JIMP.open("backgrd.jpg", "jpg", function (err,bg) {
 
 		Trace(err || "read background");
 
@@ -1404,13 +1405,13 @@ function util(sql, runopt, input, rots, pads, flips) {  //< supports GX unit tes
 					parts = file.split("/"),
 					name = parts[parts.length-1];
 
-				LWIP.open(file, "jpg", function (err,opened) {
+				JIMP.open(file, "jpg", function (err,opened) {
 
 					Trace(err || "read "+file);
 
 					switch (runopt) {
 						case 6: 
-							LWIP.open("jpgs/pos-0.jpg", function (err,pos) {
+							JIMP.open("jpgs/pos-0.jpg", function (err,pos) {
 								if (true)
 									bg.batch().paste(0,0,pos).paste(50,50,pos).writeFile("jump.jpg", "jpg", {}, function () {} );
 
@@ -1526,7 +1527,17 @@ function util(sql, runopt, input, rots, pads, flips) {  //< supports GX unit tes
 	});
 }
 
+//=================================== unit testing
+
+/**
+@class GEOHACK.Unit_Tests_Use_Cases
+*/
+
 switch (process.argv[2]) { //<unit tests and db config
+	case "?":
+		Log("unit test with 'node geohack.js [G1 || G2 || ...]'");
+		break;
+		
 	case "G1":
 		var HACK = require("../geohack");
 
@@ -1561,7 +1572,7 @@ switch (process.argv[2]) { //<unit tests and db config
 		});
 		break;	
 
-	case "GX":  // db setups
+	case "G2":  // db setups
 
 		var TOTEM = require("../totem").config({
 			"byTable.": {

@@ -4,7 +4,9 @@
   "description": "",
   "main": "geohack.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+	  "edit": "vi ./config.sh",
+	  "start": "start ./config.sh",
+    "test": "node geohack.js "
   },
   "repository": {
     "type": "git",
@@ -17,7 +19,8 @@
   },
   "homepage": "https://github.com/ACMESDS/geohack#readme",
   "dependencies": {
-	"atomic": "^1.0.0",
-	"enum": "^1.0.0"
+    "enum": "^1.0.0",
+    "glwip": "^1.0.0",
+    "jimp": "^0.6.4"
   }
 }
