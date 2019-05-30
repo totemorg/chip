@@ -19,8 +19,7 @@ var
 	STREAM = require("stream"),
 
 	// totem modules
-	//JIMP = require('glwip');
-	JIMP = require("jimp");
+	IMP = require("jimp");		//require('glwip');
 
 const { Copy,Each,Log,isString,isArray } = require("enum");
 
@@ -655,7 +654,7 @@ var HACK = module.exports = {
 		}
 		
 		function open(src, args, cb) {
-			JIMP.open(src, "jpg", function (err,img) {
+			IMP.open(src, "jpg", function (err,img) {
 				if (err)
 					console.log(err);
 				else
@@ -1383,7 +1382,7 @@ function util(sql, runopt, input, rots, pads, flips) {  //< supports GX unit tes
 		plop=0, plops=flips.length * rots.length * pads.length,
 		now = new Date();
 
-	JIMP.open("backgrd.jpg", "jpg", function (err,bg) {
+	IMP.open("backgrd.jpg", "jpg", function (err,bg) {
 
 		Trace(err || "read background");
 
@@ -1405,13 +1404,13 @@ function util(sql, runopt, input, rots, pads, flips) {  //< supports GX unit tes
 					parts = file.split("/"),
 					name = parts[parts.length-1];
 
-				JIMP.open(file, "jpg", function (err,opened) {
+				IMP.open(file, "jpg", function (err,opened) {
 
 					Trace(err || "read "+file);
 
 					switch (runopt) {
 						case 6: 
-							JIMP.open("jpgs/pos-0.jpg", function (err,pos) {
+							IMP.open("jpgs/pos-0.jpg", function (err,pos) {
 								if (true)
 									bg.batch().paste(0,0,pos).paste(50,50,pos).writeFile("jump.jpg", "jpg", {}, function () {} );
 
