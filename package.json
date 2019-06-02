@@ -4,10 +4,10 @@
   "description": "",
   "main": "geohack.js",
   "scripts": {
-	  "prmprep": "source ./maint.sh prmput",
-	  "prmload": "source ./maint.sh prmget",	 
-	  "edit": "vi ./config.sh",
-	  "start": "start ./config.sh",
+    "prmprep": "source ./maint.sh prmput",
+    "prmload": "source ./maint.sh prmget",
+    "edit": "vi ./config.sh",
+    "start": "start ./config.sh",
     "test": "node geohack.js "
   },
   "repository": {
@@ -21,6 +21,7 @@
   },
   "homepage": "https://github.com/ACMESDS/geohack#readme",
   "dependencies": {
+    "core-js": "^3.1.3",
     "enum": "^1.0.0",
     "glwip": "^1.0.0",
     "jimp": "^0.6.4"
