@@ -21,9 +21,7 @@
   },
   "homepage": "https://github.com/ACMESDS/geohack#readme",
   "dependencies": {
-    "core-js": "^3.1.3",
     "enum": "^1.0.0",
-    "glwip": "^1.0.0",
     "jimp": "^0.6.4"
   }
 }
