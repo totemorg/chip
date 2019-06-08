@@ -21,7 +21,6 @@
   },
   "homepage": "https://github.com/ACMESDS/geohack#readme",
   "dependencies": {
-    "enum": "^1.0.0",
     "jimp": "^0.6.4"
   }
 }

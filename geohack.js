@@ -1369,13 +1369,13 @@ function toRing(poly) {  // [[ {x,y}, ...]] degs --> [ [lat,lon], ...] degs
 	function scale(a) {
 		for (var n=0, N=this.length; n<N; n++) this[n] = this[n] * a;
 	}
-].extend(Array);
+].Extend(Array);
 	
 [
 	function getJulian() {
 		return Math.ceil((this / 86400000) - (this.getTimezoneOffset()/1440) + 2440587.5);
 	}
-].extend(Date);
+].Extend(Date);
 	
 function util(sql, runopt, input, rots, pads, flips) {  //< supports GX unit testing
 	var 
