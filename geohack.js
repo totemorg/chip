@@ -732,11 +732,11 @@ var HACK = module.exports = {
 							if (! draws[ i = round(random() * sites) ] )
 								draws[i] = { // draw a random embed
 									idx: n++,
-									height: round(gfs*scale.sample()*aspect),
-									width: gfs*scale.sample(),
-									src: srcs.sample(),
-									flip: flips.sample(),
-									rot: rots.sample(),
+									height: round(gfs*scale.samp()*aspect),
+									width: gfs*scale.samp(),
+									src: srcs.samp(),
+									flip: flips.samp(),
+									rot: rots.samp(),
 									top: round(i / Npixels),
 									left: i % Npixels
 								};
@@ -1362,7 +1362,7 @@ function toRing(poly) {  // [[ {x,y}, ...]] degs --> [ [lat,lon], ...] degs
 }
 
 [
-	function sample() {
+	function samp() {
 		return this[ floor( random() * this.length ) ];
 	},
 
