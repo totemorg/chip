@@ -20,7 +20,5 @@
     "url": "https://github.com/ACMESDS/geohack/issues"
   },
   "homepage": "https://github.com/ACMESDS/geohack#readme",
-  "dependencies": {
-    "jimp": "^0.6.4"
-  }
+  "dependencies": {}
 }
