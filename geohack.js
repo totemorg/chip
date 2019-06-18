@@ -20,14 +20,14 @@ var
 	// totem modules
 	//IMP = require("jimp");		//require('glwip');
 
-const { Copy,Each,Log,isString,isArray } = require("enum");
+const { Copy,Each,Log,isString,isArray,Extend } = require("enum");
 
 var HACK = module.exports = {
 	
 	aoi: null, 			//< current aoi being processed
 	limit: 1e99, 		//< max numbers of chips to pull over any aoi
 
-	make: {   //< methods methiods to make objects being cached 
+	make: {   //< methods to make objects being cached 
 		chip: function makeChip( fetch, parms, cb ) {
 			var chip = parms;
 
@@ -49,7 +49,7 @@ var HACK = module.exports = {
 		},
 
 		collects: function makeCollects( fetch, parms, cb) {
-			fetch( HACK.paths.catalog.tag("?", parms), null, null, function (cat) {
+			fetch( HACK.paths.catalog.tag("?", parms), null, cat => {
 				cb(cat);
 			});
 		}
@@ -554,15 +554,15 @@ var HACK = module.exports = {
 	},
 		
 	ingestService: function (url, fetch, chan, cb) {  // ingest events from service channel
-		
 		var
 			tmin = chan.tmin,
 			tmax = chan.tmax;
 		
 		HACK.thread( function (sql) {	
-			fetch( url.tag("?", {tmin:tmin,tmax:tmax}), null, null, function (evs) {
+			fetch( url.tag("?", {tmin:tmin,tmax:tmax}), null, events => {
 				var 
 					n = 0,
+					evs = events.parseJSON( [] ),
 					str = HACK.ingestStream( sql, "guest", function () {
 						var ev = evs[n++];
 						this.push( ev ? JSON.stringify([ev.x,ev.y,ev.z,ev.n]) : null );
@@ -667,7 +667,7 @@ var HACK = module.exports = {
 
 			Log("make voxels above", chip.ID);
 
-			for (var alt=0, n=0; n<aoicase.voxelCount; n++,alt+=aoicase.voxelDepth)  { // define voxels above this chip
+			for (var alt=0, n=0; n<aoicase.voxelCount; n++,alt+=aoicase.voxelHeight)  { // define voxels above this chip
 				sql.query(
 					//"INSERT INTO app.voxels SET ?, Ring=GeomFromText(?), Anchor=GeomFromText(?)", [{
 					"INSERT INTO app.voxels SET ?, Ring=GeomFromText(?)", [{
@@ -678,7 +678,7 @@ var HACK = module.exports = {
 					alt: alt,
 					length: chip.width,
 					width: chip.height,
-					height: aoicase.voxelDepth,
+					height: aoicase.voxelHeight,
 					chipID: chip.ID,
 					radius: sqrt(chip.width**2 + chip.height**2),
 					added: now,
@@ -810,7 +810,9 @@ function SOLAR(day,tod,tz,lat,lon) {
 	
 }
 
-/*==================================================================
+function POS(x,y) { 
+/**
+@constructor POS
 Curved earth functions conventions:
 	t,cols,x,y,lat,gtp[0]
 	s,rows,y,lon,gtp[1]
@@ -818,24 +820,21 @@ Curved earth functions conventions:
 	new poly = TL,TR,BR,BL
 	top = ortho north
 */
-
-function POS(x,y) { 
 	this.x = x; this.y = y; return this; 
 }
 
-Array.prototype.pos = function (c) { return  new POS(this[1]/c, this[0]/c); }
+[
+	function map(c) { return [this.x*c, this.y*c]; },
+	function add(u) { this.x += u.x; this.y += u.y; return this; },
+	function sub(u) { this.x -= u.x; this.y -= u.y; return this; },
+	function scale(a) { this.x *= a; this.y *= a; return this; },
+	function set(u) { this.x *= u.x; this.y *= u.y; return this; },
+	function copy() { return new POS(this.x,this.y); }
+].Extend(POS);
 
-POS.prototype = {
-	map: function (c) { return [this.x*c, this.y*c]; },
-	add: function (u) { this.x += u.x; this.y += u.y; return this; },
-	sub: function (u) { this.x -= u.x; this.y -= u.y; return this; },
-	scale: function (a) { this.x *= a; this.y *= a; return this; },
-	set: function (u) { this.x *= u.x; this.y *= u.y; return this; },
-	copy: function () { return new POS(this.x,this.y); }
-}
-
-/*===================================================
-AOI interface
+function AOI( ring,chipFeatures,chipPixels,chipDim,overlap,r ) {  // build an AOI over a ring to accmodate specifed chip
+/**
+@constructor AOI
  ring = [ [lat,lon], .... ] degs defines aoi
  chipFeatures = number of feature across chip edge
  chipPixels = number of pixels across chip edge
@@ -843,8 +842,6 @@ AOI interface
  overlap = number of features to overlap chips
  r = surface radius [km]  6147=earth 0=flat
 */
-
-function AOI( ring,chipFeatures,chipPixels,chipDim,overlap,r ) {  // build an AOI over a ring to accmodate specifed chip
 
 	const {cos, acos, sin, asin, random, round, floor, min, max, sqrt, PI} = Math;
 
@@ -933,8 +930,8 @@ function AOI( ring,chipFeatures,chipPixels,chipDim,overlap,r ) {  // build an AO
 	};
 }
 
-AOI.prototype = {	
-	getChip: function (aoicase,cb) { // callback cb(chip) with next chip in this chipping process
+[
+	function getChip(aoicase,cb) { // callback cb(chip) with next chip in this chipping process
 		var
 			aoi = this,
 			lat = this.lat,
@@ -949,7 +946,7 @@ AOI.prototype = {
 		return withinAOI;	
 	},
 
-	chipArea: function (aoicase,cb) {  // start regulated chipping 
+	function chipArea(aoicase,cb) {  // start regulated chipping 
 		var aoi = this;
 		
 		aoi.chips = 0;  // reset chip counter
@@ -957,7 +954,7 @@ AOI.prototype = {
 		while ( aoi.getChip( aoicase, cb) );
 		cb( null );  // mark process done
 	}
-};
+].Extend(AOI);
 
 function CHIP(aoi) {
 	var
@@ -1043,8 +1040,8 @@ function ROC(f,obs) {
 	this.qual = 0; 		// roc quality (e.g. area under roc)
 }
 
-CHIP.prototype = {
-	forecast: function (f,aoicase,model,obs,cb) {
+[
+	function forecast(f,aoicase,model,obs,cb) {
 		var chip = this;
 		
 		Trace(`FORECASTING ${aoicase} WITH ${chip.fileID} USING ${model} AT ${f}%`);
@@ -1071,7 +1068,7 @@ CHIP.prototype = {
 		cb( new ROC(f,obs) );
 	},
 
-	runForecast: function (aoicase,cb) {
+	function runForecast(aoicase,cb) {
 		var
 			chip = this,
 			Npixels = chip.gfs, //chip.aoi.gfs,  chip.Npixels ??
@@ -1120,7 +1117,7 @@ CHIP.prototype = {
 			});
 		});
 	}
-}
+].Extend(CHIP);
 
 function Trace(msg,arg) {
 	TRACE.trace(msg,arg);
@@ -1157,6 +1154,10 @@ function toRing(poly) {  // [[ {x,y}, ...]] degs --> [ [lat,lon], ...] degs
 }
 
 [
+	function pos(c) { 
+		return  new POS(this[1]/c, this[0]/c); 
+	},
+	
 	function samp() {
 		return this[ floor( random() * this.length ) ];
 	},
