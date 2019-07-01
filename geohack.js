@@ -518,7 +518,7 @@ var HACK = module.exports = {
 	Ingest events in a file to the internal events file.
 	*/
 		function filter(buf, cb) {
-			buf.split("\n").each( function (n,rec) {
+			buf.split("\n").forEach( rec => {
 				if (rec) 
 					try {
 						var data = JSON.parse(rec);
