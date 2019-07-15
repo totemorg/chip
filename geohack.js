@@ -86,7 +86,7 @@ var HACK = module.exports = {
 		return hdist(h12, 6137)/2; //  [km]
 	},
 	
-	chipVoxels: function ( sql, pipe, file, cb ) {  
+	getVoxels: function ( sql, pipe, file, cb ) {  
 	/**
 	Chip voxels defined by the pipe:
 	
