@@ -103,7 +103,7 @@ var HACK = module.exports = {
 	
 	with calbacks to cb({File, Voxel, Events, Flux, Stats, Sensor, Chip}) for each voxel accessed.
 	**/
-		function chipper( aoi, voi, soi, file, ag) {  // area-, voxel-, senor- of interest; aggregate flag
+		function chipper( aoi, voi, soi, file, ag, cb) {  // area-, voxel-, senor- of interest; aggregate flag
 
 			function getMeta( aoi, soi, file, voxel, cb ) {
 
@@ -257,8 +257,8 @@ var HACK = module.exports = {
 			//Log("chip", {aoi: aoi, voi: voi, soi: soi, pipe:pipe, file:file} );
 
 			if (ag) 	// looking at surface super voxel having specified class name
-				sql.forEach( get.msg, get.surfaceVoxels, [ aoiPoly, {Class:"super", Alt:0, Ag:1} ], voxel => {
-				sql.forAll( get.msg, get.surfaceVoxels, [ aoiPoly, voi ], voxels => {
+				sql.forEach( get.msg, get.surfaceVoxels, [ aoiPoly, {minAlt:0, Ag:1} ], voxel => { // get the super voxel
+				sql.forAll( get.msg, get.surfaceVoxels, [ aoiPoly, voi ], voxels => {	// get its sub voxels
 					getMeta( aoi, soi, file, voxel, meta => {
 						var 
 							states = meta.States = file.Stats_stateSymbols = [],
@@ -333,11 +333,11 @@ var HACK = module.exports = {
 		if (aoi)
 			if ( isString(aoi) )  // chip all named aois
 				sql.forEach( get.msg, get.rings, {Name:aoi}, aoi => {
-					chipper( JSON.parse(aoi.Ring) , voi, soi, file, ag );
+					chipper( JSON.parse(aoi.Ring) , voi, soi, file, ag, meta => cb(meta) );
 				});
 
 			else   // chip events inside specified aoi
-				chipper( aoi, voi, soi, file, ag );
+				chipper( aoi, voi, soi, file, ag, meta => cb(meta) );
 	},
 	
 	ingestCache: function (sql, fileID, cb) { 
