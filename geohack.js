@@ -36,7 +36,7 @@ var HACK = module.exports = {
 			
 			FS.stat(chip.path, err => { // check if chip in file cache
 				if (err)  // not in cache so prime it
-					fetch( HACK.paths.images.tag("?", parms )+` >> ${chip.path}`, null, rtn => {
+					fetch( HACK.paths.images.tag("?", parms ) + "////" +  chip.path, null, rtn => {
 						Log("fetch chip", parms.path, rtn);
 						cb( rtn ? chip : null );
 					});
