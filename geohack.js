@@ -52,9 +52,7 @@ var HACK = module.exports = {
 		},
 
 		collects: function makeCollects( fetch, parms, cb) {
-			fetch( HACK.paths.catalog.tag("?", parms), null, cat => {
-				cb(cat);
-			});
+			fetch( HACK.path.catalog.tag("&", parms), info => cb( info.parseJSON( [] ) ) );
 		}
 	},				
 	
@@ -116,144 +114,111 @@ var HACK = module.exports = {
 					}
 				}
 
+				function cache( opts, cb ) {
+					var
+						keys = opts.keys || {},
+						parms = opts.parms || {},
+						id = parms.id = (keys.name||"") + "." + (keys.x1||0) + "." + (keys.x2||0),
+						rec = HACK.cache[id];
+					
+					if ( rec )
+						cb( rec );
+					
+					else
+					if ( make = opts.make ) 
+						make( HACK.fetcher, parms, (rec,parms) => cb( HACK.cache[parms.id] = new Object(rec) ) );
+				}
+				
 				var
-					aoiPoly = toPolygon(aoi),
-					make = HACK.make,
-					makeChip = make.chip,
 					makeFlux = make.flux,
 					makeCollects = make.collects,
+					aoiPoly = toPolygon(aoi),
 					limit = pipe.limit || 1000,
 					offset = pipe.offset || 0,
 					order = pipe.order || "t",
 					fields = pipe.fields || "*";
 
-				if (voxel.chipID)	// voxel has associated chip-flux-file-stats-events info
-					sql.cache({  
+				cache({ 
+					key: {
+						name: "flux", 
+						x1: voxel.lon, 
+						x2: voxel.lat,
+						t: 0
+					},
+					parms: { 
+						lat: voxel.lat,
+						lon: voxel.lon,
+						tod: new Date()
+					},
+					make: makeFlux
+				}, flux => {	// get solar flux over this aoi
+
+					cache({ 
 						key: {
-							Name1: "collects", 
-							Index1: voxel.chipID,
-							Name1: JSON.stringify(soi),
+							name: "collect", 
+							x1: voxel.lon, 
+							x2: voxel.lat,
 							t: 0
 						},
-						parms: Copy(soi, { 
-							ring: aoi
-						}),
-						default: [],
+						parms: { 
+							ring: aoi, 
+							src: "ess", 
+							width: 0, 
+							height: 0
+						},
 						make: makeCollects
-					}, collects => {		// get sensor collects over keyed voxel-sensor
+					}, chips => {	// get sensor collects over this aoi
+					
+						//Log("cached", flux, voxel);
+						if ( ag )		// aggregate all voxels above this chip (i.e. look at only surface voxels)
+							sql.forFirst(
+								TRACE,
+								"SELECT * FROM app._stats WHERE least(?)", 
+								[ {fileID: file.ID, voxelID: voxel.ID} ], stats => {  // get saved stats on this file-voxel pair
 
-						//Log(voxel.Ring, collects);
-						var
-							Ring = toRing( voxel.Ring );
+								cb({
+									File: file,
+									Voxel: voxel,
+									Events: sql.format(	// generate event getter
+											`SELECT ${fields} FROM app.events WHERE ? AND MBRcontains(geomfromtext(?),Point(x,y)) ORDER BY ${order} LIMIT ? OFFSET ?`,
+											[{fileID: file.ID}, aoiPoly, limit, offset]  ),
+									Flux: flux,
+									Stats: stats,
+									Chips: chips
+								});
+							});
 
-						sql.cache({  
-							key: {
-								Name1: "chip", 
-								x1: voxel.lon, 
-								x2: voxel.lat,
-								t: 0
-							},
-							parms: { 
-								path: `./public/images/chips/${voxel.chipID}.jpeg`,
-								bbox: toBBox( Ring ),
-								ring: toPolygon( Ring ),
-								lat: voxel.lat,
-								lon: voxel.lon
-							},
-							default: {
-								path: (collects[0] || {url: "./shares/spoof.jpg"}).url									
-							},
-							make: makeChip
-						}, chip => {		// get chip under this voxel
+						else
+							sql.forEach( // get each voxel above this chip
+								TRACE,
+								"SELECT * FROM app.voxels WHERE ? AND enabled",
+								[ {chipID: voxel.chipID} ], voxel => {
 
-							sql.cache({ 
-								key: {
-									Name1: "flux", 
-									x1: voxel.lon, 
-									x2: voxel.lat,
-									t: 0
-								},
-								parms: { 
-									lat: voxel.lat,
-									lon: voxel.lon,
-									tod: new Date()
-								},
-								default: null,
-								make: makeFlux
-							}, flux => {	// get solar flux info on this chip
-
-								//Log("cached", flux, voxel);
-								if ( ag )		// aggregate all voxels above this chip (i.e. look at only surface voxels)
-									sql.forFirst(
+									//Log("vox above", voxel);
+									sql.forFirst( // get stats on this file-voxel pair
 										TRACE,
 										"SELECT * FROM app._stats WHERE least(?)", 
-										[ {fileID: file.ID, voxelID: voxel.ID} ], stats => {  // get saved stats on this file-voxel pair
+										[ {fileID: file.ID, voxelID: voxel.ID} ], stats => {
 
 										cb({
 											File: file,
 											Voxel: voxel,
-											Events: sql.format(	// generate event getter
-													`SELECT ${fields} FROM app.events WHERE ? AND MBRcontains(geomfromtext(?),Point(x,y)) ORDER BY ${order} LIMIT ? OFFSET ?`,
-													[{fileID: file.ID}, aoiPoly, limit, offset]  ),
+											Events: sql.format(	
+													`SELECT ${fields} FROM app.events WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
+													[{voxelID: voxel.ID, fileID: file.ID}, limit, offset]  ), 
 											Flux: flux,
 											Stats: stats,
-											Sensor: collects,
-											Chip: chip
+											Chips: chips
 										});
-									});
 
-								else
-									sql.forEach( // get each voxel above this chip
-										TRACE,
-										"SELECT * FROM app.voxels WHERE ? AND enabled",
-										[ {chipID: voxel.chipID} ], voxel => {
-
-											//Log("vox above", voxel);
-											sql.forFirst( // get stats on this file-voxel pair
-												TRACE,
-												"SELECT * FROM app._stats WHERE least(?)", 
-												[ {fileID: file.ID, voxelID: voxel.ID} ], stats => {
-
-												cb({
-													File: file,
-													Voxel: voxel,
-													Events: sql.format(	
-															`SELECT ${fields} FROM app.events WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
-															[{voxelID: voxel.ID, fileID: file.ID}, limit, offset]  ), 
-													Flux: flux,
-													Stats: stats,
-													Sensor: collects,
-													Chip: chip
-												});
-
-												/*if (hypo) {  // test chipID if over ground truth site then start a ROC workflow
-												} */
-											}); 
-										});	
-
-							});
-						});
-
+									}); 
+								});	
+						
 					});
-
-				else	// voxel has only associated file-stats-events info
-					sql.forFirst( // get stats on this file-voxel pair
-						TRACE,
-						"SELECT * FROM app._stats WHERE least(?)", 
-						[ {fileID: file.ID, voxelID: voxel.ID} ], stats => {
-
-						cb({
-							File: file,
-							Voxel: voxel,
-							Events: sql.format(	
-									`SELECT ${fields} FROM app.events WHERE least(?,1) ORDER BY ${order} LIMIT ? OFFSET ?`,
-									[{voxelID: voxel.ID, fileID: file.ID}, limit, offset]  ), 
-							Stats: stats
-						});
-					}); 
-
+								
+			});
 			}
-
+			
 			//Log("chip", {aoi: aoi, voi: voi, soi: soi, pipe:pipe, file:file} );
 
 			if (ag) 	// looking at surface super voxel having specified class name
@@ -652,11 +617,9 @@ var HACK = module.exports = {
 	},
 	
 	detectAOI: function (sql, aoicase) {
-		
-		HACK.chipAOI(sql, aoicase, function (chip) {
-
+	
+		HACK.chipAOI(sql, aoicase, chip => {
 			Log("detecting chip", chip.bbox);
-
 		});
 	},
 	
@@ -665,208 +628,49 @@ var HACK = module.exports = {
 		var now = new Date();
 		
 		const {sqrt} = Math;
+
+		sql.beginBulk();   // speeds up voxel inserts but chipID will be null
 		
-		HACK.chipAOI(sql, aoicase, function (chip) {
+		HACK.chipAOI(sql, aoicase, chip => {
+			if ( chip ) {
+				Log("make voxels above", chip);
 
-			Log("make voxels above", chip.ID);
-
-			for (var alt=0, n=0; n<aoicase.voxelCount; n++,alt+=aoicase.voxelHeight)  { // define voxels above this chip
-				sql.query(
-					//"INSERT INTO app.voxels SET ?, Ring=GeomFromText(?), Anchor=GeomFromText(?)", [{
-					"INSERT INTO app.voxels SET ?, Ring=GeomFromText(?)", [{
-					enabled: true,
-					class: aoicase.Name,
-					lon: chip.lon,
-					lat: chip.lat,
-					alt: alt,
-					length: chip.width,
-					width: chip.height,
-					height: aoicase.voxelHeight,
-					chipID: chip.ID,
-					radius: sqrt(chip.width**2 + chip.height**2),
-					added: now,
-					minSNR: 0
-				}, 
-					chip.ring, 
-					//chip.anchor
-				] );
-
-				//if (!alt) Log(chip.ring);
-				//if (!alt) Log(q);
+				sql.query("INSERT INTO app.chips SET ?", {
+					x: chip.pos.lat,  // [degs]
+					y: chip.pos.lon,	// [degs]
+					Ring: toPolygon(chip.ring),	// [degs]
+					Point: toPoint([ chip.pos.lat, chip.pos.lon ]),  // [degs]
+					t: 0,
+					rows: chip.rows, // lat direction
+					cols: chip.cols // lon direction
+				}, (err, chipInfo) => {
+					if ( !err ) 	// chip created so need to create voxels above
+						for (var alt=0, n=0; n<aoicase.voxelCount; n++,alt+=aoicase.voxelHeight)  { // define voxels above this chip
+							sql.query(
+								//"INSERT INTO app.voxels SET ?, Ring=GeomFromText(?), Anchor=GeomFromText(?)", [{
+								"INSERT INTO app.voxels SET ?, Ring=GeomFromText(?)", [{
+									enabled: true,
+									class: aoicase.Name,
+									lon: chip.lon,
+									lat: chip.lat,
+									alt: alt,
+									length: chip.width,
+									width: chip.height,
+									height: aoicase.voxelHeight,
+									chipID: chipInfo.insertId,
+									radius: sqrt(chip.width**2 + chip.height**2),
+									added: now,
+									minSNR: 0
+								}, chip.ring ] 
+							);
+						}
+				});
 			}
 
-		});		
-	},
-	
-	/*
-	chipAOI: function (chan, det, cb) {  // start detector on new sql thread
-		
-		function threadEngine( sql, cb ) { // start engine thread and provide engine stepper to callback
-
-			var 
-				req = Copy( det, {  // engine context
-					group: "app",
-					table: det.name,
-					client: det.client,
-					query: chan,
-					body: {},
-					sql: sql,
-					action: "select",
-					state: {
-						frame: {  // input port
-							job: ""
-						},
-						detector: {   // output port
-							scale: det.step, 
-							dim: aoi.gfs,
-							delta: det.range,
-							hits: det.detects,
-							cascade: [
-								ENV.DETS + "cars/haar/ver0/cascade"
-							],
-							dets: [],
-							net: ENV.DETS + "cars/cnn/test0_lenet_"
-						}
-					}
-				}),
-				dets = req.state.detector.dets,
-				images = CHIPPER.paths.images;
-
-			for (var n=0, Ndets =aoi.Nf*aoi.Nf; n<Ndets ; n++) // opencv engines require a tau reserve
-				dets.push( {res:0} );
-
-			//console.log({detreserve: dets.length});
-			
-			ENGINE.run(req, function (ctx, step) { // start an engine thread
-				
-				if ( ctx )
-					cb( function(chip,dets) { // use this engine stepper
-						ctx.frame.job = images + chip.fileID;
-
-						if ( err = step() ) Trace(err);
-
-						ctx.detector.dets.each = Array.prototype.each;
-						ctx.detector.dets.each( function (n,det) {
-							//console.log({det:det});
-							//if (det.job == "set") dets.push(det);
-							//dets.push(det);
-						});
-						
-						return dets;
-					});
-
-				else
-					cb( null );
-			});
-		}
-
-		function eachCollect( chan, cb ) {  // prime collection process then callback cb()
-			var 
-				collects = CHIPPER.collects,
-				fetch = CHIPPER.fetch.catalog;
-
-			chan.geometryPolygon = JSON.stringify({rings: chan.aoiring});  // ring being monitored
-			delete chan.aoiring;
-
-			console.log({collecting:chan});
-
-			fetch(chan, function (cat) {  // query catalog for desired data channel
-
-				//console.log({fetchcat: cat});
-				
-				if ( cat ) {
-					switch ( chan.source ) {  // normalize response to ess
-						case "dglobe":
-							break;
-						case "omar":
-							break;
-						case "ess":
-						default:
-					}
-
-					var
-						results = ( cat.GetRecordsResponse || {SearchResults: {}} ).SearchResults,
-						datasets = results.DatasetSummary || [];
-
-					datasets.each( function (n,collect) {  // pull image collects from each catalog entry
-						var 
-							image = collect["Image-Product"].Image,
-							sun = image["Image-Sun-Characteristic"] || {SunElevationDim: "0", SunAzimuth: "0"},
-							restrict = collect["Image-Restriction"] || {Classification: "?", ClassificationSystemId: "?", LimitedDistributionCode: ["?"]},
-							raster = image["Image-Raster-Object-Representation"],
-							region = collect["Image-Country-Coverage"] || {CountryCode: ["??"]},
-							atm = image["Image-Atmospheric-Characteristic"],
-							urls = {
-								wms: collect.WMSUrl,
-								wmts: collect.WMTSUrl,
-								jpip: collect.JPIPUrl
-							};
-
-						if (urls.wms) { // valid collects have a wms url
-							// ImageId == "12NOV16220905063EA00000 270000EA530040"
-							Trace("COLLECTED "+image.ImageId);
-
-							collects[image.ImageId] = {  // add collect to internal catalog
-								imported: new Date(image.ImportDate),
-								collected: new Date(image.QualityRating),
-								mission: image.MissionId,
-								sunEl: parseFloat(sun.SunElevationDim),
-								sunAz: parseFloat(sun.SunAzimuth),
-								layer: collect.CoverId,
-								clouds: atm.CloudCoverPercentageRate,
-								country: region.CountryCode[0],
-								classif: restrict.ClassificationCode + "//" + restrict.LimitedDistributionCode[0],
-								imageID: image.ImageId.replace(/ /g,""),
-								mode: image.SensorCode,
-								bands: parseInt(image.BandCountQuantity),
-								gsd: parseFloat(image.MeanGroundSpacingDistanceDim)*25.4e-3,
-								wms: urls.wms
-									.replace(
-										"?REQUEST=GetCapabilities&VERSION=1.3.0",
-										"?request=GetMap&version=1.1.1")
-									.tag({
-										width: aoi.lat.pixels,
-										height: aoi.lon.pixels,
-										srs: "epsg%3A4326",
-										format: "image/jpeg"
-									})
-							};
-						}
-
-						else
-							Trace(CHIPPER.errors.nowms);
-					});
-				}
-
-				cb();
-			});
-		}
-		
-		//if ( !chan.ring ) chan.ring = CHIPPER.spoof.ring;
-		
-		var aoi = CHIPPER.aoi = new AOI( chan.aoiring, det.scale, det.pixels, det.size );
-		
-		console.log({chipping_aoi: [aoi.lat.steps, aoi.lon.steps]});
-					 
-		CHIPPER.thread( function (sql) {  // start a sql thread
-			threadEngine( sql, function (stepEngine) {  // start detector engine thread
-				eachCollect( chan, function () { // for each collect on this channel
-					
-					if (stepEngine)  // detector provided
-						aoi.chipArea(det, function (chip,sql) {  // get the next chip is this aoi
-							cb(chip, stepEngine( chip, [] ), sql);  // step detector on this chip
-						});
-
-					else  // no detector provided so just chip
-						aoi.chipArea(det, function (chip,sql) {
-							cb(chip, null, sql);
-						});	
-				});
-			});
+			else
+				sql.endBulk();	
 		});
-		
 	},
-	*/
 	
 	chipAOI: function (sql, aoicase, cb) {
 		var
@@ -874,36 +678,21 @@ var HACK = module.exports = {
 			chipFeatures = aoicase.chipFeatures, // [ features along edge ]
 			chipPixels = aoicase.chipPixels, // [pixels]
 			featureDim = aoicase.featureLength, // [m]
-			overlap = aoicase.featureOverlap, // [features]
+			featureOverlap = aoicase.featureOverlap, // [features]
 			chipDim = featureDim * chipFeatures,  // [m]
 			earthRadius = aoicase.radius,  // [km]  6147=earth 0=flat
-			aoi = new AOI( ring, chipFeatures, chipPixels, chipDim, overlap, earthRadius);
+			aoi = new AOI( ring, chipFeatures, chipPixels, chipDim, featureOverlap, earthRadius);
 
-		Log("voxelize", aoicase);
-		//sql.beginBulk();   // speeds up voxel inserts but chipID will be null
+		Log("chipAOI", {
+			aoi: aoicase, 
+			overlap_features: featureOverlap,
+			chip_features: chipFeatures,
+			chip_pixels: chipPixels,
+			chip_m: chipDim,
+			feature_m: featureDim
+		});
 		
-		aoi.chipArea(aoicase, function (chip) {  //< enumerate chips over this aoi
-			
-			if (chip)  // still chips in this aoi
-				sql.cache({  // get chip info or make it if not in the cache
-					key: {  		// key chips in the cache like this
-						Name1: "chip", 
-						x1: chip.pos.lat.toFixed(4), 
-						x2: chip.pos.lon.toFixed(4),
-						t: 0
-					},
-					parms: chip,	// parms to make is just the chip itself
-					default: null,  // discard uncached chips from this flow
-					make: function makeChip(fetch, parms, cb) {  
-						cb(parms);  // dont fetch chip as aoi only voxelizing
-					}
-				}, cb );
-			
-			else { // no more chips in this aoi
-				//sql.endBulk();
-			}
-			
-		});	
+		aoi.getChip( aoicase, cb );	
 	}
 	
 };
@@ -1104,7 +893,7 @@ function AOI( ring,chipFeatures,chipPixels,chipDim,overlap,r ) {  // build an AO
 }
 
 [
-	function getChip(aoicase,cb) { // callback cb(chip) with next chip in this chipping process
+	function hasChip(aoicase,cb) { // return true if aoi still has a chip to process
 		var
 			aoi = this,
 			lat = this.lat,
@@ -1113,19 +902,16 @@ function AOI( ring,chipFeatures,chipPixels,chipDim,overlap,r ) {  // build an AO
 		
 		//Log(aoi.chips, lat.idx, lon.idx);
 		
-		if ( withinAOI )  // process if max chips not reached
-			cb( new CHIP(aoi) );
-		
 		return withinAOI;	
 	},
 
-	function chipArea(aoicase,cb) {  // start regulated chipping 
+	function getChip(aoicase,cb) {  // start regulated chipping 
 		var aoi = this;
 		
 		aoi.chips = 0;  // reset chip counter
 		
-		while ( aoi.getChip( aoicase, cb) );
-		cb( null );  // mark process done
+		while ( aoi.hasChip( aoicase ) ) cb( new CHIP(aoi) );
+		cb( null );  // signal chipping process done
 	}
 ].Extend(AOI);
 
@@ -1134,8 +920,8 @@ function CHIP(aoi) {
 		cos = Math.cos,
 		acos = Math.acos,	
 		eps = {pos: 0.00001, scale:0.01},
-		lat = aoi.lat,  // [rads]
-		lon = aoi.lon,  // [rads]
+		lat = aoi.lat,  
+		lon = aoi.lon, 
 		c = aoi.c,
 		pos = this.pos = {lat: lat.val*c, lon: lon.val*c};    // [degs]
 	
