@@ -547,7 +547,6 @@ var HACK = module.exports = {
 		noStepper: new Error("engine does not exist, is not enabled, or lost stepper")
 	},
 	
-
 	/*
 	tagCollect: function (chip, cb) {  // process all collects associated with requested chip with callback cb(chip) 
 		Each(HACK.collects, function (n,collect) {  // tag chip with collect info
