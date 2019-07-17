@@ -320,7 +320,7 @@ var HACK = module.exports = {
 						+ "LEFT JOIN app.voxels ON least( " + [
 								"MBRcontains(voxels.Ring,point(evcache.x,evcache.y))" ,
 								"evcache.z BETWEEN voxels.alt AND voxels.alt+voxels.height",
-								"voxels.classID = evcache.k",
+								"voxels.class = evcache.k",
 								"voxels.enabled"
 							].join(", ") + ") WHERE ? HAVING voxelID"
 
@@ -404,14 +404,14 @@ var HACK = module.exports = {
 			sql.beginBulk();
 		
 			sink
-			.on("finish", function () {
+			.on("finish", () => {
 
 				sql.endBulk();
 
 				//Trace(`INGEST ${ingested} EVENTS FROM FILE${fileID}`);
 
 				if ( ingested )  // callback if there were ingested events
-					HACK.ingestCache(sql, fileID, function (aoi) {
+					HACK.ingestCache(sql, fileID, aoi => {
 						//Log("ingest cb", cb);
 						cb(aoi);
 
@@ -440,7 +440,7 @@ var HACK = module.exports = {
 					});
 
 			})
-			.on("error", function (err) {
+			.on("error", err => {
 				sql.endBulk();
 				Log("INGEST FAILED", err);
 			});
@@ -640,8 +640,8 @@ var HACK = module.exports = {
 					Ring: toPolygon(chip.ring),	// [degs]
 					Point: toPoint([ chip.pos.lat, chip.pos.lon ]),  // [degs]
 					t: 0,
-					rows: chip.rows, // lat direction
-					cols: chip.cols // lon direction
+					rows: chip.rows, // lat direction [pixels]
+					cols: chip.cols // lon direction [pixels]
 				}, (err, chipInfo) => {
 					if ( !err ) 	// chip created so need to create voxels above
 						for (var alt=0, n=0; n<aoicase.voxelCount; n++,alt+=aoicase.voxelHeight)  { // define voxels above this chip
@@ -679,8 +679,8 @@ var HACK = module.exports = {
 			featureDim = aoicase.featureLength, // [m]
 			featureOverlap = aoicase.featureOverlap, // [features]
 			chipDim = featureDim * chipFeatures,  // [m]
-			earthRadius = aoicase.radius,  // [km]  6147=earth 0=flat
-			aoi = new AOI( ring, chipFeatures, chipPixels, chipDim, featureOverlap, earthRadius);
+			surfRadius = aoicase.radius,  // [km]  6147=earth 0=flat
+			aoi = new AOI( ring, chipFeatures, chipPixels, chipDim, featureOverlap, surfRadius);
 
 		Log("chipAOI", {
 			aoi: aoicase, 
@@ -691,7 +691,7 @@ var HACK = module.exports = {
 			feature_m: featureDim
 		});
 		
-		aoi.getChip( aoicase, cb );	
+		aoi.getChips( aoicase, cb );	
 	}
 	
 };
@@ -904,7 +904,7 @@ function AOI( ring,chipFeatures,chipPixels,chipDim,overlap,r ) {  // build an AO
 		return withinAOI;	
 	},
 
-	function getChip(aoicase,cb) {  // start regulated chipping 
+	function getChips(aoicase,cb) {  // start regulated chipping 
 		var aoi = this;
 		
 		aoi.chips = 0;  // reset chip counter
