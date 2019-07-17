@@ -34,6 +34,7 @@ var HACK = module.exports = {
 			// change logic here. sql.cache should return chip path.  dogCache will remove from cache if aged.
 			// so here must always fetch the chip into the file path, then add it in the sql.cache
 			
+			/*
 			FS.stat(chip.path, err => { // check if chip in file cache
 				if (err)  // not in cache so prime it
 					fetch( HACK.paths.images.tag("?", parms ) + "////" +  chip.path, null, rtn => {
@@ -43,7 +44,7 @@ var HACK = module.exports = {
 
 				else // in cache
 					cb(chip);
-			});
+			});  */
 		},
 
 		flux: function makeFlux( fetch, parms, cb) {
@@ -542,7 +543,7 @@ var HACK = module.exports = {
 	thread: () => { Trace("sql thread not configured"); },  //< sql threader
 	
 	errors: {
-		nowfs: new Error("chipping cataloge service failed"),
+		nowfs: new Error("chipping catalog service failed"),
 		nowms: new Error("chipping service failed to provide a wms url"),
 		noStepper: new Error("engine does not exist, is not enabled, or lost stepper")
 	},
@@ -555,9 +556,9 @@ var HACK = module.exports = {
 	}, */
 	
 	paths: {
-		images: ENV.SRV_TOTEM+"/shares/spoof.jpg", //ENV.WMS_TOTEM,
-		catalog: ENV.WFS_TOTEM,
-		tips: ENV.TIPS
+		chips: "./stash/images.chips", //ENV.SRV_TOTEM+"/shares/spoof.jpg", //ENV.WMS_TOTEM,
+		catalog: "/wfs",
+		tips: "./stash/images/tips"
 	},
 
 	models: { // forecasting models
@@ -622,7 +623,7 @@ var HACK = module.exports = {
 		});
 	},
 	
-	voxelizeAOI: function (sql, aoicase) {
+	voxelizeAOI: function (sql, query) {
 		
 		var now = new Date();
 		
@@ -630,37 +631,40 @@ var HACK = module.exports = {
 
 		sql.beginBulk();   // speeds up voxel inserts but chipID will be null
 		
-		HACK.chipAOI(sql, aoicase, chip => {
+		Log("voxelize", query);
+		
+		HACK.chipAOI(sql, query, chip => {
 			if ( chip ) {
-				Log("make voxels above", chip);
+				Log("make voxels above", chip.ring);
 
-				sql.query("INSERT INTO app.chips SET ?", {
+				sql.query("INSERT INTO app.chips SET ?, Ring=GeomFromText(?), Point=GeomFromText(?)",  [{
 					x: chip.pos.lat,  // [degs]
 					y: chip.pos.lon,	// [degs]
-					Ring: toPolygon(chip.ring),	// [degs]
-					Point: toPoint([ chip.pos.lat, chip.pos.lon ]),  // [degs]
 					t: 0,
+					class: query.Name,
 					rows: chip.rows, // lat direction [pixels]
 					cols: chip.cols // lon direction [pixels]
-				}, (err, chipInfo) => {
+				}, toPolygon(chip.ring),	// [degs]
+					toPoint([ chip.pos.lat, chip.pos.lon ])  // [degs]
+				],  (err, chipInfo) => {
 					if ( !err ) 	// chip created so need to create voxels above
-						for (var alt=0, n=0; n<aoicase.voxelCount; n++,alt+=aoicase.voxelHeight)  { // define voxels above this chip
+						for (var alt=0, n=0; n<query.voxelCount; n++,alt+=query.voxelHeight)  { // define voxels above this chip
 							sql.query(
 								//"INSERT INTO app.voxels SET ?, Ring=GeomFromText(?), Anchor=GeomFromText(?)", [{
 								"INSERT INTO app.voxels SET ?, Ring=GeomFromText(?)", [{
 									enabled: true,
-									class: aoicase.Name,
+									class: query.Name,
 									lon: chip.lon,
 									lat: chip.lat,
 									alt: alt,
 									length: chip.width,
 									width: chip.height,
-									height: aoicase.voxelHeight,
+									height: query.voxelHeight,
 									chipID: chipInfo.insertId,
 									radius: sqrt(chip.width**2 + chip.height**2),
 									added: now,
 									minSNR: 0
-								}, chip.ring ] 
+								}, toPolygon(chip.ring) ], err => Log("ins vox", err)
 							);
 						}
 				});
@@ -671,19 +675,19 @@ var HACK = module.exports = {
 		});
 	},
 	
-	chipAOI: function (sql, aoicase, cb) {
+	chipAOI: function (sql, query, cb) {
 		var
-			ring = aoicase.ring, // [ [lat, lon], ...] degs
-			chipFeatures = aoicase.chipFeatures, // [ features along edge ]
-			chipPixels = aoicase.chipPixels, // [pixels]
-			featureDim = aoicase.featureLength, // [m]
-			featureOverlap = aoicase.featureOverlap, // [features]
+			ring = query.ring, // [ [lat, lon], ...] degs
+			chipFeatures = query.chipFeatures, // [ features along edge ]
+			chipPixels = query.chipPixels, // [pixels]
+			featureDim = query.featureLength, // [m]
+			featureOverlap = query.featureOverlap, // [features]
 			chipDim = featureDim * chipFeatures,  // [m]
-			surfRadius = aoicase.radius,  // [km]  6147=earth 0=flat
+			surfRadius = query.radius,  // [km]  6147=earth 0=flat
 			aoi = new AOI( ring, chipFeatures, chipPixels, chipDim, featureOverlap, surfRadius);
 
 		Log("chipAOI", {
-			aoi: aoicase, 
+			aoi: query, 
 			overlap_features: featureOverlap,
 			chip_features: chipFeatures,
 			chip_pixels: chipPixels,
@@ -691,7 +695,7 @@ var HACK = module.exports = {
 			feature_m: featureDim
 		});
 		
-		aoi.getChips( aoicase, cb );	
+		aoi.getChips( query, cb );	
 	}
 	
 };
@@ -955,7 +959,7 @@ function CHIP(aoi) {
 	this.bbox = toBBox( ring ); // [TLd[0], TLd[1], BRd[0], BRd[1]];   // [min lon,lat, max lon,lat]  degs
 	this.lat = TLd[0]; 	// [degs]
 	this.lon = TLd[1];  // [degs]
-	this.ring = toPolygon( ring );
+	this.ring = ring;
 
 	if (this.r)  // curved earth model
 		if ( lon.val < lon.max ) {  // advance lon
@@ -1036,7 +1040,7 @@ function ROC(f,obs) {
 		if (false)
 			makeJPG({
 				LAYER: "", //chip.aoi.layerID,
-				OUT: ENV.TIPS + chip.cache.ID + ".jpg",
+				OUT: HACK.paths.tips + chip.cache.ID + ".jpg",
 				RETRY: chip.cache.ID+"",
 				W: tip.width,
 				H: tip.height,

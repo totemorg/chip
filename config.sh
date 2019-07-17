@@ -8,9 +8,4 @@ export HERE=`pwd`
 export IVA=$BASE/iva
 export GDAL=$BASE/gdal
 
-# chip and DB paths
-export CHIPS=public/images/chips/
-export TIPS=public/images/tips/
-export PROOFS=public/dbs/vars/ver0
-
 # UNCLASSIFIED when IP addresses and passwords are undefined
