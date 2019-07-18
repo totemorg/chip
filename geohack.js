@@ -306,7 +306,7 @@ var HACK = module.exports = {
 				chipper( aoi, voi, soi, file, ag, meta => cb(meta) );
 	},
 	
-	ingestCache: function (sql, fileID, cb) { 
+	ingestCache: function (sql, fileID, eventClass, cb) { 
 	/** 
 	Ingest the evcache db for the given fileID into the events db then callback cb(aoi)
 	@param {Object} sql connector
@@ -321,22 +321,23 @@ var HACK = module.exports = {
 						+ "LEFT JOIN app.voxels ON least( " + [
 								"MBRcontains(voxels.Ring,point(evcache.x,evcache.y))" ,
 								"evcache.z BETWEEN voxels.alt AND voxels.alt+voxels.height",
-								"voxels.class = evcache.k",
+								"?",
 								"voxels.enabled"
 							].join(", ") + ") WHERE ? HAVING voxelID"
 
 				// bypass voxelization
 				: "INSERT INTO app.events SELECT *, 0 AS voxelID FROM app.evcache WHERE ?" ,
 			
-			{"evcache.fileID":fileID},
+			[{"voxels.class": eventClass}, {"evcache.fileID": fileID}],
 			
-			function (ingest) {
+			ingest => {
 				
 			sql.forFirst(
 				"INGEST",
 				
 				"SELECT "
 				+ "? AS Voxelized, "
+				+ "? AS Class, "
 				+ "min(x) AS xMin, max(x) AS xMax, "		// lat [degs]
 				+ "min(y) AS yMin, max(y) AS yMax, "		// lon [degs]
 				+ "min(z) AS zMin, max(z) AS zMax, "		// alt [km]
@@ -346,12 +347,12 @@ var HACK = module.exports = {
 				+ "count(id) AS Samples "		// samples ingested
 				+ "FROM app.evcache WHERE ?", 
 				
-				[ ingest.affectedRows, {fileID:fileID} ],	cb);
+				[ ingest.affectedRows, eventClass, {fileID:fileID} ],	cb);
 				
 		});
 	},
 
-	ingestPipe: function (sql, filter, fileID, src, cb) {  
+	ingestPipe: function (sql, filter, fileID, eventClass, src, cb) {  
 	/**
 	Pipe src event stream created for this fileID thru the supplied filter(ev,cache) to the evcache db with callback cb(aoi) when finished.
 	@member GEOHACK
@@ -379,8 +380,8 @@ var HACK = module.exports = {
 							
 							sql.query(
 								"INSERT INTO app.evcache SET ?", [{
-									x: ev.x || 0,		// lat [degs]
-									y: ev.y || 0,		// lon [degs]
+									x: ev.x || 40.54933526,		// lat [degs]
+									y: ev.y || 37.41501485,		// lon [degs]
 									z: ev.z || 0,		// alt [km]
 									t: ev.t || 0,		// sample time [ms]
 									s: ev.s || (ev.t - refTime), 		// relative steps [ms]
@@ -412,7 +413,7 @@ var HACK = module.exports = {
 				//Trace(`INGEST ${ingested} EVENTS FROM FILE${fileID}`);
 
 				if ( ingested )  // callback if there were ingested events
-					HACK.ingestCache(sql, fileID, aoi => {
+					HACK.ingestCache(sql, fileID, eventClass, aoi => {
 						//Log("ingest cb", cb);
 						cb(aoi);
 
@@ -450,7 +451,7 @@ var HACK = module.exports = {
 		});
 	},
 	
-	ingestList: function (sql, evs, fileID, cb) {
+	ingestList: function (sql, evs, fileID, eventClass, cb) {
 	/**
 	Ingest events list to internal fileID with callback cb(aoi) when finished.
 	@member GEOHACK
@@ -471,10 +472,10 @@ var HACK = module.exports = {
 				}
 			});
 		
-		HACK.ingestPipe(sql, null, fileID, src, cb);
+		HACK.ingestPipe(sql, null, fileID, eventClass, src, cb);
 	},
 	
-	ingestFile: function (sql, evsPath, fileID, cb) {  
+	ingestFile: function (sql, evsPath, fileID, eventClass, cb) {  
 	/**
 	Ingest events in evsPath to internal fileID with callback cb(aoi).
 	@member GEOHACK
@@ -519,7 +520,7 @@ var HACK = module.exports = {
 		var
 			src = FS.createReadStream(evsPath,"utf8");
 		
-		HACK.ingestPipe(sql, filter, fileID, src, cb);
+		HACK.ingestPipe(sql, filter, fileID, eventClass, src, cb);
 	},
 		
 	ingestService: function (url, fetch, chan, cb) {  // ingest events from service channel
