@@ -22,7 +22,7 @@ var
 
 const { Copy,Each,Log,isString,isArray,Extend } = require("enum");
 
-var HACK = module.exports = {
+var GEO = module.exports = {
 	
 	aoi: null, 			//< current aoi being processed
 	limit: 1e99, 		//< max numbers of chips to pull over any aoi
@@ -37,7 +37,7 @@ var HACK = module.exports = {
 			/*
 			FS.stat(chip.path, err => { // check if chip in file cache
 				if (err)  // not in cache so prime it
-					fetch( HACK.paths.images.tag("?", parms ) + "////" +  chip.path, null, rtn => {
+					fetch( GEO.paths.images.tag("?", parms ) + "////" +  chip.path, null, rtn => {
 						Log("fetch chip", parms.path, rtn);
 						cb( rtn ? chip : null );
 					});
@@ -53,7 +53,7 @@ var HACK = module.exports = {
 		},
 
 		collects: function makeCollects( fetch, parms, cb) {
-			HACK.fetcher( HACK.paths.catalog.tag("?", parms), null, info => cb( info.parseJSON( [] ) ) );
+			GEO.fetcher( GEO.paths.catalog.tag("?", parms), null, info => cb( info.parseJSON( [] ) ) );
 		}
 	},				
 	
@@ -117,14 +117,14 @@ var HACK = module.exports = {
 				var
 					key = opts.key || "",
 					parms = opts.parms || {},
-					rec = HACK.cache[key];
+					rec = GEO.cache[key];
 
 				if ( rec )
 					cb( rec );
 
 				else
 				if ( make = opts.make ) 
-					make( HACK.fetcher, parms, (rec,parms) => cb( HACK.cache[key] = new Object(rec) ) );
+					make( GEO.fetcher, parms, (rec,parms) => cb( GEO.cache[key] = new Object(rec) ) );
 			}
 
 			var
@@ -142,7 +142,7 @@ var HACK = module.exports = {
 					lon: voxel.lon,
 					tod: new Date()
 				},
-				make: HACK.make.flux
+				make: GEO.make.flux
 			}, flux => {	// get solar flux over this aoi
 				cache({ 
 					key: `collect-${voxel.lon}-${voxel.lat}-${rows}-${cols}`,
@@ -152,7 +152,7 @@ var HACK = module.exports = {
 						width: cols, 
 						height: rows
 					},
-					make: HACK.make.collects
+					make: GEO.make.collects
 				}, chips => {	// get sensor collects over this aoi
 					//Log("cached", flux, voxel);
 					if ( ag )		// aggregate all voxels above this chip (i.e. look at only surface voxels)
@@ -404,7 +404,7 @@ var HACK = module.exports = {
 				Trace(`INGEST ${ingested} EVENTS FROM FILE${fileID}`);
 
 				if ( ingested )  // callback if there were ingested events
-					HACK.ingestCache(sql, fileID, eventClass, aoi => {
+					GEO.ingestCache(sql, fileID, eventClass, aoi => {
 						//Log("ingest cb", cb);
 						cb(aoi);
 
@@ -463,7 +463,7 @@ var HACK = module.exports = {
 				}
 			});
 		
-		HACK.ingestPipe(sql, null, fileID, eventClass, src, cb);
+		GEO.ingestPipe(sql, null, fileID, eventClass, src, cb);
 	},
 	
 	ingestFile: function (sql, evsPath, fileID, eventClass, cb) {  
@@ -511,7 +511,7 @@ var HACK = module.exports = {
 		var
 			src = FS.createReadStream(evsPath,"utf8");
 		
-		HACK.ingestPipe(sql, filter, fileID, eventClass, src, cb);
+		GEO.ingestPipe(sql, filter, fileID, eventClass, src, cb);
 	},
 		
 	ingestService: function (url, fetch, chan, cb) {  // ingest events from service channel
@@ -519,12 +519,12 @@ var HACK = module.exports = {
 			tmin = chan.tmin,
 			tmax = chan.tmax;
 		
-		HACK.thread( function (sql) {	
+		GEO.thread( function (sql) {	
 			fetch( url.tag("?", {tmin:tmin,tmax:tmax}), null, events => {
 				var 
 					n = 0,
 					evs = events.parseJSON( [] ),
-					str = HACK.ingestStream( sql, "guest", function () {
+					str = GEO.ingestStream( sql, "guest", function () {
 						var ev = evs[n++];
 						this.push( ev ? JSON.stringify([ev.x,ev.y,ev.z,ev.n]) : null );
 					}).pipe( str );
@@ -543,7 +543,7 @@ var HACK = module.exports = {
 	
 	/*
 	tagCollect: function (chip, cb) {  // process all collects associated with requested chip with callback cb(chip) 
-		Each(HACK.collects, function (n,collect) {  // tag chip with collect info
+		Each(GEO.collects, function (n,collect) {  // tag chip with collect info
 			cb( Copy(collect, chip) );
 		});
 	}, */
@@ -599,24 +599,32 @@ var HACK = module.exports = {
 	
 	config: function (opts,cb) {  //< configure it
 		
-		if (opts) Copy(opts, HACK, ".");
+		if (opts) Copy(opts, GEO, ".");
 		
 		/*
-		if ( streamingWindow = HACK.streamingWindow)
-			HACK.ingestStreams(streamingWindow, function (twindow,status,sql) {
+		if ( streamingWindow = GEO.streamingWindow)
+			GEO.ingestStreams(streamingWindow, function (twindow,status,sql) {
 				console.log(twindow,status);
 			}); */			
 
 		if (cb) cb(null);
-		return HACK;
+		return GEO;
 	},
 	
 	detectAOI: function (sql, aoicase) {
 	
-		HACK.chipAOI(sql, aoicase, chip => {
+		GEO.chipAOI(sql, aoicase, chip => {
 			Log("detecting chip", chip.bbox);
 		});
 	},
+	
+	// chippers
+	voxelize: function (query) {
+		GEO.thread( sql => {
+			GEO.voxelizeAOI(sql,query);
+			sql.release();
+		});
+	},	
 	
 	voxelizeAOI: function (sql, query) {
 		
@@ -628,7 +636,7 @@ var HACK = module.exports = {
 		
 		Log("voxelize", query);
 		
-		HACK.chipAOI(sql, query, chip => {
+		GEO.chipAOI(sql, query, chip => {
 			if ( chip ) {
 				Log("make voxels above", chip.ring);
 
@@ -896,7 +904,7 @@ function AOI( ring,chipFeatures,chipPixels,chipDim,overlap,r ) {  // build an AO
 			aoi = this,
 			lat = this.lat,
 			lon = this.lon,
-			withinAOI = aoi.chips++ < HACK.limit && lat.idx <= lat.steps; //lat.val <= lat.max;
+			withinAOI = aoi.chips++ < GEO.limit && lat.idx <= lat.steps; //lat.val <= lat.max;
 		
 		//Log(aoi.chips, lat.idx, lon.idx);
 		
@@ -1008,7 +1016,7 @@ function ROC(f,obs) {
 		fchip.ID = "forecasts/"+f+"_"+chip.fileID;
 		
 		/*
-		if (thread = HACK.thread) // save roc
+		if (thread = GEO.thread) // save roc
 			thread( function (sql) {
 				sql.query(  
 					"REPLACE INTO rocs SET ?,address=geofromtext(?)", 
@@ -1035,7 +1043,7 @@ function ROC(f,obs) {
 		if (false)
 			makeJPG({
 				LAYER: "", //chip.aoi.layerID,
-				OUT: HACK.paths.tips + chip.cache.ID + ".jpg",
+				OUT: GEO.paths.tips + chip.cache.ID + ".jpg",
 				RETRY: chip.cache.ID+"",
 				W: tip.width,
 				H: tip.height,
@@ -1048,7 +1056,7 @@ function ROC(f,obs) {
 			bchip.forecast(0, function (roc) { // always run at f=0=1-FAR-1-HR level
 				cb(bchip); // run detector against this chip
 				
-				if ( model = HACK.models.debug )  {  // HACK.models[bchip.cache.forecast] 
+				if ( model = GEO.models.debug )  {  // GEO.models[bchip.cache.forecast] 
 					Trace(`FORECASTING ${bchip.job} USING ${model.name}`);
 					
 					model.levels.each( function (n,f) {
@@ -1291,11 +1299,11 @@ switch (process.argv[2]) { //<unit tests and db config
 		break;
 		
 	case "G1":
-		var HACK = require("../geohack");
+		var GEO = require("../geohack");
 
 		var TOTEM = require("../totem").config({
 			"byTable.": {
-				chip: HACK.chippers,
+				chip: GEO.chippers,
 
 				wfs: function (req,res) {
 					res("here i go again");
@@ -1319,7 +1327,7 @@ switch (process.argv[2]) { //<unit tests and db config
 			});
 		});
 
-		HACK.config({
+		GEO.config({
 			thread: TOTEM.thread
 		});
 		break;	
@@ -1328,7 +1336,7 @@ switch (process.argv[2]) { //<unit tests and db config
 
 		var TOTEM = require("../totem").config({
 			"byTable.": {
-				chip: HACK.chippers,
+				chip: GEO.chippers,
 
 				wfs: function (req,res) {
 					res("here i go again");
