@@ -619,12 +619,6 @@ var GEO = module.exports = {
 	},
 	
 	// chippers
-	voxelize: function (query) {
-		GEO.thread( sql => {
-			GEO.voxelizeAOI(sql,query);
-			sql.release();
-		});
-	},	
 	
 	voxelizeAOI: function (sql, query) {
 		
