@@ -17,9 +17,6 @@ var
 	CP = require("child_process"),
 	STREAM = require("stream");
 
-	// totem modules
-	//IMP = require("jimp");		//require('glwip');
-
 const { Copy,Each,Log,isString,isArray,Extend } = require("enum");
 
 var GEO = module.exports = {
@@ -53,7 +50,7 @@ var GEO = module.exports = {
 		},
 
 		collects: function makeCollects( fetch, parms, cb) {
-			GEO.fetcher( GEO.paths.catalog.tag("?", parms), null, info => cb( info.parseJSON( [] ) ) );
+			GEO.getSite( GEO.paths.catalog.tag("?", parms), null, info => cb( info.parseJSON( [] ) ) );
 		}
 	},				
 	
@@ -124,7 +121,7 @@ var GEO = module.exports = {
 
 				else
 				if ( make = opts.make ) 
-					make( GEO.fetcher, parms, (rec,parms) => cb( GEO.cache[key] = new Object(rec) ) );
+					make( GEO.getSite, parms, (rec,parms) => cb( GEO.cache[key] = new Object(rec) ) );
 			}
 
 			var
@@ -533,7 +530,7 @@ var GEO = module.exports = {
 	},	
 			
 	thread: () => { Trace("sql thread not configured"); },  //< sql threader
-	fetcher: () => { Trace("fetcher not configured"); },  //< http data fetcher
+	getSite: () => { Trace("getSite not configured"); },  //< http data getSite
 	
 	errors: {
 		nowfs: new Error("chipping catalog service failed"),
