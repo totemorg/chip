@@ -50,7 +50,7 @@ var GEO = module.exports = {
 		},
 
 		collects: function makeCollects( fetch, parms, cb) {
-			GEO.getSite( GEO.paths.catalog.tag("?", parms), null, info => cb( info.parseJSON( [] ) ) );
+			GEO.probeSite( GEO.paths.catalog.tag("?", parms), info => cb( info.parseJSON( [] ) ) );
 		}
 	},				
 	
@@ -121,7 +121,7 @@ var GEO = module.exports = {
 
 				else
 				if ( make = opts.make ) 
-					make( GEO.getSite, parms, (rec,parms) => cb( GEO.cache[key] = new Object(rec) ) );
+					make( GEO.probeSite, parms, (rec,parms) => cb( GEO.cache[key] = new Object(rec) ) );
 			}
 
 			var
@@ -516,7 +516,7 @@ var GEO = module.exports = {
 			tmin = chan.tmin,
 			tmax = chan.tmax;
 		
-		GEO.thread( function (sql) {	
+		GEO.sqlThread( function (sql) {	
 			fetch( url.tag("?", {tmin:tmin,tmax:tmax}), null, events => {
 				var 
 					n = 0,
@@ -529,8 +529,8 @@ var GEO = module.exports = {
 		});
 	},	
 			
-	thread: () => { Trace("sql thread not configured"); },  //< sql threader
-	getSite: () => { Trace("getSite not configured"); },  //< http data getSite
+	sqlThread: () => { throw "geohack unconfigured sqlThread method"; },  //< sql threader
+	probeSite: () => { throw "geohack unconfigured probeSite method"; },  //< http data probeSite
 	
 	errors: {
 		nowfs: new Error("chipping catalog service failed"),
@@ -1007,7 +1007,7 @@ function ROC(f,obs) {
 		fchip.ID = "forecasts/"+f+"_"+chip.fileID;
 		
 		/*
-		if (thread = GEO.thread) // save roc
+		if (thread = GEO.sqlThread) // save roc
 			thread( function (sql) {
 				sql.query(  
 					"REPLACE INTO rocs SET ?,address=geofromtext(?)", 
