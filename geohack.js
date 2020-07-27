@@ -50,7 +50,7 @@ var GEO = module.exports = {
 		},
 
 		collects: function makeCollects( fetch, parms, cb) {
-			GEO.probeSite( GEO.paths.catalog.tag("?", parms), info => cb( info.parseJSON( [] ) ) );
+			fetch( GEO.paths.catalog.tag("?", parms), info => cb( info.parseJSON( [] ) ) );
 		}
 	},				
 	
@@ -121,7 +121,7 @@ var GEO = module.exports = {
 
 				else
 				if ( make = opts.make ) 
-					make( GEO.probeSite, parms, (rec,parms) => cb( GEO.cache[key] = new Object(rec) ) );
+					make( GEO.fetch, parms, (rec,parms) => cb( GEO.cache[key] = new Object(rec) ) );
 			}
 
 			var
@@ -517,7 +517,7 @@ var GEO = module.exports = {
 			tmax = chan.tmax;
 		
 		GEO.sqlThread( function (sql) {	
-			fetch( url.tag("?", {tmin:tmin,tmax:tmax}), null, events => {
+			fetch( url.tag("?", {tmin:tmin,tmax:tmax}), events => {
 				var 
 					n = 0,
 					evs = events.parseJSON( [] ),
@@ -529,8 +529,8 @@ var GEO = module.exports = {
 		});
 	},	
 			
-	sqlThread: () => { throw "geohack unconfigured sqlThread method"; },  //< sql threader
-	probeSite: () => { throw "geohack unconfigured probeSite method"; },  //< http data probeSite
+	sqlThread: () => { throw "geohack - sqlThread unconfigured"; },  //< sql threader
+	fetch: () => { throw "geohack - fetch unconfigured"; },  //< http data fetch
 	
 	errors: {
 		nowfs: new Error("chipping catalog service failed"),
