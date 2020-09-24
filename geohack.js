@@ -1,13 +1,15 @@
 // UNCLASSIFIED
 
 /**
- * @class GEOHACK
- * @requires fs
- * @requires child_process
- * @requires stream
- * @requires enum
- */
-var   
+	@module GEOHACK
+	Chip surface of spherical objects like the earth.
+	
+	@requires fs
+	@requires child_process
+	@requires stream
+	@requires enum
+*/
+const   
 	// globals
 	ENV = process.env,
 	TRACE = "G>",
@@ -17,7 +19,7 @@ var
 	CP = require("child_process"),
 	STREAM = require("stream");
 
-const { Copy,Each,Log,isString,isArray,Extend } = require("enum");
+const { Copy,Each,Log,isString,isArray,Extend,Fetch } = GEOHACK = require("enum");
 
 var GEO = module.exports = {
 	
@@ -34,7 +36,7 @@ var GEO = module.exports = {
 			/*
 			FS.stat(chip.path, err => { // check if chip in file cache
 				if (err)  // not in cache so prime it
-					fetch( GEO.paths.images.tag("?", parms ) + "////" +  chip.path, null, rtn => {
+					Fetch( GEO.paths.images.tag("?", parms ) + "////" +  chip.path, null, rtn => {
 						Log("fetch chip", parms.path, rtn);
 						cb( rtn ? chip : null );
 					});
@@ -50,7 +52,7 @@ var GEO = module.exports = {
 		},
 
 		collects: function makeCollects( fetch, parms, cb) {
-			fetch( GEO.paths.catalog.tag("?", parms), info => cb( info.parseJSON( [] ) ) );
+			Fetch( GEO.paths.catalog.tag("?", parms), info => cb( info.parseJSON( [] ) ) );
 		}
 	},				
 	
@@ -121,7 +123,7 @@ var GEO = module.exports = {
 
 				else
 				if ( make = opts.make ) 
-					make( GEO.fetch, parms, (rec,parms) => cb( GEO.cache[key] = new Object(rec) ) );
+					make( Fetch, parms, (rec,parms) => cb( GEO.cache[key] = new Object(rec) ) );
 			}
 
 			var
@@ -517,7 +519,7 @@ var GEO = module.exports = {
 			tmax = chan.tmax;
 		
 		GEO.sqlThread( function (sql) {	
-			fetch( url.tag("?", {tmin:tmin,tmax:tmax}), events => {
+			Fetch( url.tag("?", {tmin:tmin,tmax:tmax}), events => {
 				var 
 					n = 0,
 					evs = events.parseJSON( [] ),
@@ -530,7 +532,7 @@ var GEO = module.exports = {
 	},	
 			
 	sqlThread: () => { throw "geohack - sqlThread unconfigured"; },  //< sql threader
-	fetch: () => { throw "geohack - fetch unconfigured"; },  //< http data fetch
+	//fetch: () => { throw "geohack - fetch unconfigured"; },  //< http data fetch
 	
 	errors: {
 		nowfs: new Error("chipping catalog service failed"),
