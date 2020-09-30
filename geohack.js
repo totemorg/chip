@@ -771,16 +771,16 @@ function SOLAR(day,tod,tz,lat,lon) {
 	
 }
 
-function POS(x,y) { 
 /**
-@constructor POS
-Curved earth functions conventions:
-	t,cols,x,y,lat,gtp[0]
-	s,rows,y,lon,gtp[1]
-	old poly = TL,TR,BL,BR,TL
-	new poly = TL,TR,BR,BL
-	top = ortho north
+	@constructor POS
+	Curved earth functions conventions:
+		t,cols,x,y,lat,gtp[0]
+		s,rows,y,lon,gtp[1]
+		old poly = TL,TR,BL,BR,TL
+		new poly = TL,TR,BR,BL
+		top = ortho north
 */
+function POS(x,y) { 
 	this.x = x; this.y = y; return this; 
 }
 
@@ -793,17 +793,16 @@ Curved earth functions conventions:
 	function copy() { return new POS(this.x,this.y); }
 ].Extend(POS);
 
-function AOI( ring,chipFeatures,chipPixels,chipDim,overlap,r ) {  // build an AOI over a ring to accmodate specifed chip
 /**
-@constructor AOI
- ring = [ [lat,lon], .... ] degs defines aoi
- chipFeatures = number of feature across chip edge
- chipPixels = number of pixels across chip edge
- chipDim = length of chip edge [m]
- overlap = number of features to overlap chips
- r = surface radius [km]  6147=earth 0=flat
+	@constructor AOI
+	ring = [ [lat,lon], .... ] degs defines aoi
+	chipFeatures = number of feature across chip edge
+	chipPixels = number of pixels across chip edge
+	chipDim = length of chip edge [m]
+	overlap = number of features to overlap chips
+	r = surface radius [km]  6147=earth 0=flat
 */
-
+function AOI( ring,chipFeatures,chipPixels,chipDim,overlap,r ) {  // build an AOI over a ring to accmodate specifed chip
 	const {cos, acos, sin, asin, random, round, floor, min, max, sqrt, PI} = Math;
 
 	/*

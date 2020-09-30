@@ -2,11 +2,11 @@
 
 ## Installation
 
-Clone [GEOHACK chipper](https://github.com/totemstan/geohack) || [COE](https://sc.appdev.proj.coe/acmesds/geohack) || [SBU](https://gitlab.west.nga.ic.gov/acmesds/geohack) into your PROJECT/geohack folder.  
+Clone [GEOHACK chipper]REPO{geohack} into your PROJECT/geohack folder.  
 
 ## Requires
 
-[ENUM enumerators](https://github.com/totemstan/enum) || [COE](https://sc.appdev.proj.coe/acmesds/enum) || [SBU](https://gitlab.west.nga.ic.gov/acmesds/enum).  
+[ENUM enumerators]REPO{enum}.  
 
 Required MySQL Databases
 
@@ -33,8 +33,8 @@ Access and configure GEOHACK like this:
 		console.log( err ? "something evil is lurking" : "look mom - Im running!");
 	});
 
-where [its configuration keys](http://totem.hopto.org/shares/prm/geohack/index.html) || [COE](https://totem.west.ile.nga.ic.gov/shares/prm/geohack/index.html) || [SBU](https://totem.nga.mil/shares/prm/geohack/index.html)
-follow the [ENUM deep copy conventions](https://github.com/totemstan/enum) || [COE](https://sc.appdev.proj.coe/acmesds/enum) || [SBU](https://gitlab.west.nga.ic.gov/acmesds/enum).
+where [its configuration keys]SITE{shares/prm/geohack/index.html}
+follow the [ENUM deep copy conventions]REPO{enum}.
 
 
 ### G1
