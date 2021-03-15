@@ -7,7 +7,7 @@
 	@requires fs
 	@requires child_process
 	@requires stream
-	@requires enum
+	@requires enums
 */
 const   
 	// globals
@@ -19,7 +19,7 @@ const
 	CP = require("child_process"),
 	STREAM = require("stream");
 
-const { Copy,Each,Log,isString,isArray,Extend,Fetch } = GEOHACK = require("enum");
+const { Copy,Each,Log,isString,isArray,Extend,Fetch } = GEOHACK = require("enums");
 
 var GEO = module.exports = {
 	
