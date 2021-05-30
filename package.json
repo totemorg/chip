@@ -4,10 +4,8 @@
   "description": "",
   "main": "geohack.js",
   "scripts": {
-    "prmprep": "source ./maint.sh prmput",
-    "prmload": "source ./maint.sh prmget",
+	"redoc": "jsdoc2md --template README.hbs --files geohack.js >README.md; git commit -am 'redoc'; git  push agent master",
     "edit": "vi ./config.sh",
-    "start": "start ./config.sh",
     "test": "node geohack.js "
   },
   "repository": {

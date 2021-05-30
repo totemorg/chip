@@ -1,50 +1,131 @@
 # GEOHACK
 
+Use **GEOHACK** to chip surface of spherical objects like the earth.  Each chip contains 
+a current image chip as well as solar etc information.
+
 ## Installation
 
-Clone [GEOHACK chipper](https://github.com/totemstan/geohack) || [COE](https://sc.appdev.proj.coe/acmesds/geohack) || [SBU](https://gitlab.west.nga.ic.gov/acmesds/geohack) into your PROJECT/geohack folder.  
-
-## Requires
-
-[ENUM enumerators](https://github.com/totemstan/enum) || [COE](https://sc.appdev.proj.coe/acmesds/enum) || [SBU](https://gitlab.west.nga.ic.gov/acmesds/enum).  
-
-Required MySQL Databases
-
-* openv.profiles Reads and populates when clients arrive  
-* openv.sessions Reads and populates when client sessions are established  
-* openv.riddles Builds on config() and reads when clients arrive  
-* openv.apps Reads on config() to override GEOHACK options and define site context parameters
+Clone [GEOHACK](https://github.com/totemstan/geohack) || [COE](https://sc.appdev.proj.coe/acmesds/geohack) || [SBU](https://gitlab.west.nga.ic.gov/acmesds/debe) into your PROJECT/debe folder.  Also requires 
+[ENUMS](https://github.com/totemstan/enums) || [COE](https://sc.appdev.proj.coe/acmesds/enums) || [SBU](https://gitlab.west.nga.ic.gov/acmesds/enums), 
 
 ## Manage 
 
-	npm test [? || G1 || G2 || ...]		# unit test
-	npm run [ edit || start ]			# Configure environment
-	npm run [ prmprep || prmload ]		# Revise PRM
-	
+	npm test [ ? || D1 || D2 || ... ]	# Unit test
+	npm run redoc						# Update and distribute documentation
+
 ## Usage
 
-Access and configure GEOHACK like this:
+Require, configure and start a DEBE server:
 
-	var GEOHACK = require("geohack").config({
+	const GEO = require("geohack");
+	
+	GEO.config({
 		key: value, 						// set key
 		"key.key": value, 					// indexed set
 		"key.key.": value					// indexed append
-	}, function (err) {
+	}, err =>  {
 		console.log( err ? "something evil is lurking" : "look mom - Im running!");
 	});
 
-where [its configuration keys](http://totem.hopto.org/shares/prm/geohack/index.html) || [COE](https://totem.west.ile.nga.ic.gov/shares/prm/geohack/index.html) || [SBU](https://totem.nga.mil/shares/prm/geohack/index.html)
+where [its configuration keys](http://totem.hopto.org/shares/prm/debe/index.html) || [COE](https://totem.west.ile.nga.ic.gov/shares/prm/debe/index.html) || [SBU](https://totem.nga.mil/shares/prm/debe/index.html)
 follow the [ENUM deep copy conventions](https://github.com/totemstan/enum) || [COE](https://sc.appdev.proj.coe/acmesds/enum) || [SBU](https://gitlab.west.nga.ic.gov/acmesds/enum).
 
+## Contacting, Contributing, Following
 
-### G1
-### G2
-
-## Contributing
-
-To contribute to this module, see our [issues](https://totem.west.ile.nga.ic.gov/issues.view)
-and [milestones](https://totem.west.ile.nga.ic.gov/milestones.view).
+Feel free to [submit and status TOTEM issues](http://totem.hopto.org/issues.view) || [COE](https://totem.west.ile.nga.ic.gov/issues.view) || [SBU](https://totem.nga.mil/issues.view), [contribute TOTEM notebooks](http://totem.hopto.org/shares/notebooks/) || [COE](https://totem.west.ile.nga.ic.gov/shares/notebooks/) || [SBU](https://totem.nga.mil/shares/notebooks/),
+[inspect TOTEM requirements](http://totem.hopto.org/reqts.view) || [COE](https://totem.west.ile.nga.ic.gov/reqts.view) || [SBU](https://totem.nga.mil/reqts.view), [browse TOTEM holdings](http://totem.hopto.org/) || [COE](https://totem.west.ile.nga.ic.gov/) || [SBU](https://totem.nga.mil/), 
+or [follow TOTEM milestones](http://totem.hopto.org/milestones.view) || [COE](https://totem.west.ile.nga.ic.gov/milestones.view) || [SBU](https://totem.nga.mil/milestones.view).
 
 ## License
 
 [MIT](LICENSE)
+
+<a name="module_GEOHACK"></a>
+
+## GEOHACK
+Chip surface of spherical objects like the earth.
+
+**Requires**: <code>module:fs</code>, <code>module:child\_process</code>, <code>module:stream</code>, <code>module:enums</code>  
+
+* [GEOHACK](#module_GEOHACK)
+    * _static_
+        * [.ingestPipe(sql, filter, fileID, src, cb)](#module_GEOHACK.ingestPipe)
+        * [.ingestList(sql, evs, fileID, cb)](#module_GEOHACK.ingestList)
+        * [.ingestFile(sql, path, fileID, cb)](#module_GEOHACK.ingestFile)
+    * _inner_
+        * [~POS](#module_GEOHACK..POS)
+        * [~AOI](#module_GEOHACK..AOI)
+
+<a name="module_GEOHACK.ingestPipe"></a>
+
+### GEOHACK.ingestPipe(sql, filter, fileID, src, cb)
+Pipe src event stream created for this fileID thru the supplied filter(ev,cache) to the evcache db with callback cb(aoi) when finished.
+
+**Kind**: static method of [<code>GEOHACK</code>](#module_GEOHACK)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| sql | <code>Object</code> | connector |
+| filter | <code>function</code> | the cache(ev) method supplied to filter(ev,cache) adds an event ev {x,y,z,t,s,class,index,state,fileID} to the evcache db. |
+| fileID | <code>Number</code> | of internal event store (0 to bypass voxelization) |
+| src | <code>Stream</code> | source stream created for this fileID |
+| cb | <code>function</code> | Response callback( ingested aoi info ) |
+
+<a name="module_GEOHACK.ingestList"></a>
+
+### GEOHACK.ingestList(sql, evs, fileID, cb)
+Ingest events list to internal fileID with callback cb(aoi) when finished.
+
+**Kind**: static method of [<code>GEOHACK</code>](#module_GEOHACK)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| sql | <code>Object</code> | connector |
+| evs | <code>Array</code> | events [ ev, ... ] to ingest |
+| fileID | <code>Number</code> | of internal event store (0 to bypass voxelization) |
+| cb | <code>function</code> | Response callback( ingested aoi info ) |
+
+<a name="module_GEOHACK.ingestFile"></a>
+
+### GEOHACK.ingestFile(sql, path, fileID, cb)
+Ingest events in evsPath to internal fileID with callback cb(aoi).
+	Ingest events in a file to the internal events file.
+
+**Kind**: static method of [<code>GEOHACK</code>](#module_GEOHACK)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| sql | <code>Object</code> | connector |
+| path | <code>String</code> | to events file containing JSON or csv info |
+| fileID | <code>Number</code> | of internal event store (0 to bypass voxelization) |
+| cb | <code>function</code> | Response callbatck( ingested aoi info ) |
+
+<a name="module_GEOHACK..POS"></a>
+
+### GEOHACK~POS
+POS
+Curved earth functions conventions:
+
+	t,cols,x,y,lat,gtp[0]
+	s,rows,y,lon,gtp[1]
+	old poly = TL,TR,BL,BR,TL
+	new poly = TL,TR,BR,BL
+	top = ortho north
+
+**Kind**: inner class of [<code>GEOHACK</code>](#module_GEOHACK)  
+<a name="module_GEOHACK..AOI"></a>
+
+### GEOHACK~AOI
+AOI
+ring = [ [lat,lon], .... ] degs defines aoi
+chipFeatures = number of feature across chip edge
+chipPixels = number of pixels across chip edge
+chipDim = length of chip edge [m]
+overlap = number of features to overlap chips
+r = surface radius [km]  6147=earth 0=flat
+
+**Kind**: inner class of [<code>GEOHACK</code>](#module_GEOHACK)  
+
+* * *
+
+&copy; 2012 ACMESDS

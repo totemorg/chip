@@ -1,13 +1,13 @@
 // UNCLASSIFIED
 
 /**
-	@module GEOHACK
-	Chip surface of spherical objects like the earth.
-	
-	@requires fs
-	@requires child_process
-	@requires stream
-	@requires enums
+Chip surface of spherical objects like the earth.
+
+@module GEOHACK
+@requires fs
+@requires child_process
+@requires stream
+@requires enums
 */
 const   
 	// globals
@@ -19,7 +19,7 @@ const
 	CP = require("child_process"),
 	STREAM = require("stream");
 
-const { Copy,Each,Log,isString,isArray,Extend,Fetch } = GEOHACK = require("enums");
+const { Copy,Each,Log,isString,isArray,Extend,Fetch } = require("enums");
 
 var GEO = module.exports = {
 	
@@ -342,17 +342,16 @@ var GEO = module.exports = {
 		});
 	},
 
-	ingestPipe: function (sql, filter, fileID, eventClass, src, cb) {  
 	/**
 	Pipe src event stream created for this fileID thru the supplied filter(ev,cache) to the evcache db with callback cb(aoi) when finished.
-	@member GEOHACK
-	@method ingestPipe
+	
 	@param {Object} sql connector
 	@param {Function} filter the cache(ev) method supplied to filter(ev,cache) adds an event ev {x,y,z,t,s,class,index,state,fileID} to the evcache db.	
 	@param {Number} fileID of internal event store (0 to bypass voxelization)	
 	@param {Stream} src source stream created for this fileID
 	@param {Function} cb Response callback( ingested aoi info )	
-	**/
+	*/
+	ingestPipe: function (sql, filter, fileID, eventClass, src, cb) {  
 		sql.query("DELETE FROM app.evcache WHERE ?", {fileID: fileID});
 
 		sql.query("SELECT PoP_Start FROM app.files WHERE ? LIMIT 1", {ID: fileID}, function (err, ref) {
@@ -441,16 +440,15 @@ var GEO = module.exports = {
 		});
 	},
 	
-	ingestList: function (sql, evs, fileID, eventClass, cb) {
 	/**
 	Ingest events list to internal fileID with callback cb(aoi) when finished.
-	@member GEOHACK
-	@method ingestList
+	
 	@param {Object} sql connector
 	@param {Array} evs events [ ev, ... ] to ingest
 	@param {Number} fileID of internal event store (0 to bypass voxelization)	
 	@param {Function} cb Response callback( ingested aoi info )
 	*/
+	ingestList: function (sql, evs, fileID, eventClass, cb) {
 		//Trace(`INGEST ${evs.length} EVENTS FILE ${fileID}`);
 		
 		var 
@@ -465,18 +463,16 @@ var GEO = module.exports = {
 		GEO.ingestPipe(sql, null, fileID, eventClass, src, cb);
 	},
 	
-	ingestFile: function (sql, evsPath, fileID, eventClass, cb) {  
 	/**
 	Ingest events in evsPath to internal fileID with callback cb(aoi).
-	@member GEOHACK
-	@private
-	@method ingestFile
+	Ingest events in a file to the internal events file.
+	
 	@param {Object} sql connector
 	@param {String} path to events file containing JSON or csv info
 	@param {Number} fileID of internal event store (0 to bypass voxelization)
 	@param {Function} cb Response callbatck( ingested aoi info )
-	Ingest events in a file to the internal events file.
 	*/
+	ingestFile: function (sql, evsPath, fileID, eventClass, cb) {  
 		function filter(buf, cb) {
 			buf.split("\n").forEach( rec => {
 				if (rec) 
@@ -772,13 +768,14 @@ function SOLAR(day,tod,tz,lat,lon) {
 }
 
 /**
-	@constructor POS
-	Curved earth functions conventions:
-		t,cols,x,y,lat,gtp[0]
-		s,rows,y,lon,gtp[1]
-		old poly = TL,TR,BL,BR,TL
-		new poly = TL,TR,BR,BL
-		top = ortho north
+@class POS
+Curved earth functions conventions:
+
+	t,cols,x,y,lat,gtp[0]
+	s,rows,y,lon,gtp[1]
+	old poly = TL,TR,BL,BR,TL
+	new poly = TL,TR,BR,BL
+	top = ortho north
 */
 function POS(x,y) { 
 	this.x = x; this.y = y; return this; 
@@ -794,13 +791,13 @@ function POS(x,y) {
 ].Extend(POS);
 
 /**
-	@constructor AOI
-	ring = [ [lat,lon], .... ] degs defines aoi
-	chipFeatures = number of feature across chip edge
-	chipPixels = number of pixels across chip edge
-	chipDim = length of chip edge [m]
-	overlap = number of features to overlap chips
-	r = surface radius [km]  6147=earth 0=flat
+@class AOI
+ring = [ [lat,lon], .... ] degs defines aoi
+chipFeatures = number of feature across chip edge
+chipPixels = number of pixels across chip edge
+chipDim = length of chip edge [m]
+overlap = number of features to overlap chips
+r = surface radius [km]  6147=earth 0=flat
 */
 function AOI( ring,chipFeatures,chipPixels,chipDim,overlap,r ) {  // build an AOI over a ring to accmodate specifed chip
 	const {cos, acos, sin, asin, random, round, floor, min, max, sqrt, PI} = Math;
@@ -1280,10 +1277,6 @@ function util(sql, runopt, input, rots, pads, flips) {  //< supports GX unit tes
 }
 
 //=================================== unit testing
-
-/**
-@class GEOHACK.Unit_Tests_Use_Cases
-*/
 
 switch (process.argv[2]) { //<unit tests and db config
 	case "?":
