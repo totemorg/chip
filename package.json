@@ -4,7 +4,7 @@
   "description": "",
   "main": "geohack.js",
   "scripts": {
-	"redoc": "jsdoc2md --template README.hbs --files geohack.js >README.md; git commit -am 'redoc'; git  push agent master",
+    "redoc": "jsdoc2md --template README.hbs --files geohack.js >README.md; git commit -am 'redoc'; git  push agent master",
     "edit": "vi ./config.sh",
     "test": "node geohack.js "
   },
@@ -18,5 +18,8 @@
     "url": "https://github.com/ACMESDS/geohack/issues"
   },
   "homepage": "https://github.com/ACMESDS/geohack#readme",
-  "dependencies": {}
+  "dependencies": {
+    "enums": "file:../repo/enums-1.0.1.tgz",
+    "gdal-next": "^2.8.0"
+  }
 }
