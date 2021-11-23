@@ -19,7 +19,7 @@
   },
   "homepage": "https://github.com/ACMESDS/geohack#readme",
   "dependencies": {
-    "enums": "file:../repo/enums-1.0.1.tgz",
+    "enums": "^1.0.1",
     "gdal-next": "^2.8.0"
   }
 }
