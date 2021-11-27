@@ -27,8 +27,16 @@ Require, configure and start a DEBE server:
 		console.log( err ? "something evil is lurking" : "look mom - Im running!");
 	});
 
-where [its configuration keys](http://totem.hopto.org/shares/prm/debe/index.html) || [COE](https://totem.west.ile.nga.ic.gov/shares/prm/debe/index.html) || [SBU](https://totem.nga.mil/shares/prm/debe/index.html)
-follow the [ENUM deep copy conventions](https://github.com/totemstan/enum) || [COE](https://sc.appdev.proj.coe/acmesds/enum) || [SBU](https://gitlab.west.nga.ic.gov/acmesds/enum).
+where its configuration keys (
+[WWW](http://totem.zapto.org/shares/prm/totem/index.html) 
+[COE](https://totem.west.ile.nga.ic.gov/shares/prm/totem/index.html) 
+[SBU](https://totem.nga.mil/shares/prm/totem/index.html)
+)
+follow the **ENUMS** deep copy conventions (
+[WWW](https://github.com/totemstan/enum) 
+[COE](https://sc.appdev.proj.coe/acmesds/enum) 
+[SBU](https://gitlab.west.nga.ic.gov/acmesds/enum)
+).
 
 ## Program Reference
 <details>
