@@ -30,16 +30,11 @@ Require, configure and start a DEBE server:
 where [its configuration keys](http://totem.hopto.org/shares/prm/debe/index.html) || [COE](https://totem.west.ile.nga.ic.gov/shares/prm/debe/index.html) || [SBU](https://totem.nga.mil/shares/prm/debe/index.html)
 follow the [ENUM deep copy conventions](https://github.com/totemstan/enum) || [COE](https://sc.appdev.proj.coe/acmesds/enum) || [SBU](https://gitlab.west.nga.ic.gov/acmesds/enum).
 
-## Contacting, Contributing, Following
-
-Feel free to [submit and status TOTEM issues](http://totem.hopto.org/issues.view) || [COE](https://totem.west.ile.nga.ic.gov/issues.view) || [SBU](https://totem.nga.mil/issues.view), [contribute TOTEM notebooks](http://totem.hopto.org/shares/notebooks/) || [COE](https://totem.west.ile.nga.ic.gov/shares/notebooks/) || [SBU](https://totem.nga.mil/shares/notebooks/),
-[inspect TOTEM requirements](http://totem.hopto.org/reqts.view) || [COE](https://totem.west.ile.nga.ic.gov/reqts.view) || [SBU](https://totem.nga.mil/reqts.view), [browse TOTEM holdings](http://totem.hopto.org/) || [COE](https://totem.west.ile.nga.ic.gov/) || [SBU](https://totem.nga.mil/), 
-or [follow TOTEM milestones](http://totem.hopto.org/milestones.view) || [COE](https://totem.west.ile.nga.ic.gov/milestones.view) || [SBU](https://totem.nga.mil/milestones.view).
-
-## License
-
-[MIT](LICENSE)
-
+## Program Reference
+<details>
+<summary>
+<i>Open/Close</i>
+</summary>
 <a name="module_GEOHACK"></a>
 
 ## GEOHACK
@@ -125,6 +120,17 @@ overlap = number of features to overlap chips
 r = surface radius [km]  6147=earth 0=flat
 
 **Kind**: inner class of [<code>GEOHACK</code>](#module_GEOHACK)  
+</details>
+
+## Contacting, Contributing, Following
+
+Feel free to [submit and status TOTEM issues](http://totem.hopto.org/issues.view) || [COE](https://totem.west.ile.nga.ic.gov/issues.view) || [SBU](https://totem.nga.mil/issues.view), [contribute TOTEM notebooks](http://totem.hopto.org/shares/notebooks/) || [COE](https://totem.west.ile.nga.ic.gov/shares/notebooks/) || [SBU](https://totem.nga.mil/shares/notebooks/),
+[inspect TOTEM requirements](http://totem.hopto.org/reqts.view) || [COE](https://totem.west.ile.nga.ic.gov/reqts.view) || [SBU](https://totem.nga.mil/reqts.view), [browse TOTEM holdings](http://totem.hopto.org/) || [COE](https://totem.west.ile.nga.ic.gov/) || [SBU](https://totem.nga.mil/), 
+or [follow TOTEM milestones](http://totem.hopto.org/milestones.view) || [COE](https://totem.west.ile.nga.ic.gov/milestones.view) || [SBU](https://totem.nga.mil/milestones.view).
+
+## License
+
+[MIT](LICENSE)
 
 * * *
 
