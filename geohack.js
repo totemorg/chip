@@ -19,9 +19,11 @@ const
 	CP = require("child_process"),
 	STREAM = require("stream");
 
-const { Copy,Each,Log,isString,isArray,Extend,Fetch } = require("enums");
+const { Copy,Each,Log,Debug,isString,isArray,Extend,Fetch } = require("../enums");
 
-var GEO = module.exports = {
+const { Trace } = GEO = module.exports = {
+	
+	Trace: (msg, ...args) => `geohack>>>${msg}`.trace( args ),
 	
 	aoi: null, 			//< current aoi being processed
 	limit: 1e99, 		//< max numbers of chips to pull over any aoi
@@ -1073,10 +1075,6 @@ function ROC(f,obs) {
 	}
 ].Extend(CHIP);
 
-function Trace(msg,arg) {
-	TRACE.trace(msg,arg);
-}
-
 function toPolygon(ring) {  // [ [lat,lon], ... ] degs --> POLYGON(( lat lon, ... )) degs
 	return 'POLYGON((' + [  
 		ring[0].join(" "),
@@ -1279,8 +1277,13 @@ function util(sql, runopt, input, rots, pads, flips) {  //< supports GX unit tes
 //=================================== unit testing
 
 switch (process.argv[2]) { //<unit tests and db config
+	case "G?":
 	case "?":
-		Log("unit test with 'node geohack.js [G1 || G2 || ...]'");
+		Trace("unit test with 'node geohack.js [G$ || G1 || G2 || ...]'");
+		break;
+		
+	case "G$":
+		Debug(CHIP);
 		break;
 		
 	case "G1":
