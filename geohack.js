@@ -19,7 +19,7 @@ const
 	CP = require("child_process"),
 	STREAM = require("stream");
 
-const { Copy,Each,Log,Debug,isString,isArray,Extend,Fetch } = require("../enums");
+const { Copy,Each,Log,Debug,isString,isArray,Extend,Fetch } = require("./enums");
 
 const { Trace } = GEO = module.exports = {
 	

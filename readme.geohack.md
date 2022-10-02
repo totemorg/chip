@@ -5,13 +5,18 @@ a current image chip as well as solar etc information.
 
 ## Installation
 
-Clone [GEOHACK](https://github.com/totem-man/geohack) || [COE](https://sc.appdev.proj.coe/acmesds/geohack) || [SBU](https://gitlab.west.nga.ic.gov/acmesds/debe) into your PROJECT/debe folder.  Also requires 
-[ENUMS](https://github.com/totem-man/enums) || [COE](https://sc.appdev.proj.coe/acmesds/enums) || [SBU](https://gitlab.west.nga.ic.gov/acmesds/enums), 
+Clone **GEOHACK** and its dependencies from one of its REPOs:
 
-## Manage 
+	cd MYPROJECT
+	git clone REPO/totem-man/geohack
+	git clone REPO/totem-man/enums
 
-	npm test [ ? || D1 || D2 || ... ]	# Unit test
-	npm run redoc						# Update and distribute documentation
+To start and manage **READER**: 
+
+	npm run start [ ? | $ | ...]	# Unit test
+	npm run verminor				# Roll minor version
+	npm run vermajor				# Roll major version
+	npm run redoc					# Regen documentation
 
 ## Usage
 
