@@ -1,7 +1,7 @@
 # [CHIP](https://github.com/totem-man/chip)
 
-Use **CHIP** to chip surface of spherical objects like the earth.  Each chip contains 
-a current image chip as well as solar etc information.
+**CHIP** surface of a planet.  Returned chips contain animage chip and various meta (solar etc) 
+information.
 
 ## Manage
 
