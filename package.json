@@ -6,19 +6,19 @@
   "scripts": {
     "verminor": "npm version minor -f",
     "vermajor": "npm version major -f",
-    "redoc": "jsdoc2md --template README.hbs --files geohack.js >README.md; git commit -am 'redoc'; git  push agent master",
-    "test": "node geohack.js "
+    "redoc": "jsdoc2md --template README.hbs --files chip.js >README.md; git commit -am 'redoc'; git  push agent master",
+    "test": "node chip.js "
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ACMESDS/geohack.git"
+    "url": "git+https://github.com/ACMESDS/chip.git"
   },
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/ACMESDS/geohack/issues"
+    "url": "https://github.com/ACMESDS/chip/issues"
   },
-  "homepage": "https://github.com/ACMESDS/geohack#readme",
+  "homepage": "https://github.com/ACMESDS/chip#readme",
   "dependencies": {
     "@totemstan/enums": "^1.17.0",
     "gdal-next": "^2.8.0"
