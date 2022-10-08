@@ -1,8 +1,8 @@
 {
-  "name": "geohack",
-  "version": "1.1.0",
+  "name": "@totemstan/chip",
+  "version": "1.2.0",
   "description": "",
-  "main": "geohack.js",
+  "main": "chip.js",
   "scripts": {
     "verminor": "npm version minor -f",
     "vermajor": "npm version major -f",
@@ -20,6 +20,7 @@
   },
   "homepage": "https://github.com/ACMESDS/geohack#readme",
   "dependencies": {
+    "@totemstan/enums": "^1.17.0",
     "gdal-next": "^2.8.0"
   }
 }
