@@ -1,18 +1,11 @@
-# [GEOHACK](https://github.com/totem-man/geohack)
+# [CHIP](https://github.com/totem-man/CHIP)
 
-Use **GEOHACK** to chip surface of spherical objects like the earth.  Each chip contains 
+Use **CHIP** to chip surface of spherical objects like the earth.  Each chip contains 
 a current image chip as well as solar etc information.
 
-## Installation
+## Manage
 
-Clone **GEOHACK** and its dependencies from one of its REPOs:
-
-	cd MYPROJECT
-	git clone REPO/totem-man/geohack
-	git clone REPO/totem-man/enums
-
-To start and manage **READER**: 
-
+	npm install @totemstan/chip		# install
 	npm run start [ ? | $ | ...]	# Unit test
 	npm run verminor				# Roll minor version
 	npm run vermajor				# Roll major version
@@ -22,9 +15,7 @@ To start and manage **READER**:
 
 Require, configure and start a DEBE server:
 
-	const GEO = require("geohack");
-	
-	GEO.config({
+	require("@totemstan/chip").config({
 		key: value, 						// set key
 		"key.key": value, 					// indexed set
 		"key.key.": value					// indexed append
@@ -32,7 +23,7 @@ Require, configure and start a DEBE server:
 		console.log( err ? "something evil is lurking" : "look mom - Im running!");
 	});
 
-where configuration keys follow [ENUMS deep copy conventions](https://github.com/totem-man/enums)
+where configuration keys follow [ENUMS deep copy conventions](https://github.com/totem-man/enums).
 
 
 ## Program Reference
