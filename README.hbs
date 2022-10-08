@@ -1,4 +1,4 @@
-# [CHIP](https://github.com/totem-man/CHIP)
+# [CHIP](https://github.com/totem-man/chip)
 
 Use **CHIP** to chip surface of spherical objects like the earth.  Each chip contains 
 a current image chip as well as solar etc information.
@@ -13,7 +13,7 @@ a current image chip as well as solar etc information.
 
 ## Usage
 
-Require, configure and start a DEBE server:
+Acquire and optionally configure:
 
 	require("@totemstan/chip").config({
 		key: value, 						// set key
