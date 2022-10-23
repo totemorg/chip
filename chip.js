@@ -19,7 +19,7 @@ const
 	CP = require("child_process"),
 	STREAM = require("stream");
 
-const { Copy,Each,Log,Debug,isString,isArray,Extend,Fetch } = require("@totemstan/enums");
+const { Copy,Each,Log,Debug,isString,isArray,Extend,Fetch } = require("@totemorg/enums");
 
 const { Trace } = CHIP = module.exports = {
 	

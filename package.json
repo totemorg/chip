@@ -1,5 +1,5 @@
 {
-  "name": "@totemstan/chip",
+  "name": "@totemorg/chip",
   "version": "1.4.0",
   "description": "",
   "main": "chip.js",
@@ -11,16 +11,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ACMESDS/chip.git"
+    "url": "git+https://github.com/totemorg/chip.git"
   },
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/ACMESDS/chip/issues"
+    "url": "https://github.com/totemorg/chip/issues"
   },
-  "homepage": "https://github.com/ACMESDS/chip#readme",
+  "homepage": "https://github.com/totemorg/chip#readme",
   "dependencies": {
-    "@totemstan/enums": "^1.17.0",
+    "@totemorg/enums": "^1.27.0",
     "gdal-next": "^2.8.0"
   }
 }
